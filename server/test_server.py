@@ -13,7 +13,7 @@ import time
 # 让导入走独立数据目录，避免污染
 os.environ["BRIDGE_DATA_DIR"] = "/tmp/dodo_test_data"
 os.environ["BRIDGE_TOKEN"] = "test-token"
-os.environ["BOT_QQ"] = "810429614"
+os.environ["BOT_QQ"] = "888888888"
 
 import dodo_bridge_server as srv  # noqa: E402
 
@@ -55,7 +55,7 @@ def test_selective_prefilter():
     print("[2] BUG-01 selective 预过滤")
     srv.reply_config = dict(srv.DEFAULT_REPLY_CONFIG)
     srv.reply_config["group_reply_mode"] = "selective"
-    srv.reply_config["owner_qq"] = 3297828886
+    srv.reply_config["owner_qq"] = 666666666
     srv.reply_config["keywords"] = ["渡渡"]
 
     # 普通群消息（无@/关键词）→ 不排队
@@ -68,7 +68,7 @@ def test_selective_prefilter():
     en, sel, trig = srv.route_message("group", 222, "渡渡说句话", False)
     check("关键词触发排队+需判断", en is True and sel is True and trig == "keyword")
     # owner → 始终回复（不需判断）
-    en, sel, trig = srv.route_message("group", 3297828886, "大家早", False)
+    en, sel, trig = srv.route_message("group", 666666666, "大家早", False)
     check("owner 无条件回复", en is True and sel is False and trig == "owner")
 
 
@@ -178,7 +178,7 @@ def test_p3_group_aggregate():
     reset()
     srv.reply_config = dict(srv.DEFAULT_REPLY_CONFIG)
     srv.reply_config["group_aggregate_window_ms"] = 200
-    srv.reply_config["owner_qq"] = 3297828886
+    srv.reply_config["owner_qq"] = 666666666
     srv.reply_config["keywords"] = ["渡渡"]
     srv.reply_config["group_reply_mode"] = "keyword_or_at"
     now = int(time.time())
@@ -224,16 +224,16 @@ def test_p3_known_users():
     print("[11] P3 G7 成员别名映射（known_users）")
     reset()
     srv.reply_config = dict(srv.DEFAULT_REPLY_CONFIG)
-    srv.reply_config["known_users"] = {"3297828886": "苜蓿", "111": "小明"}
-    check("别名优先", srv.display_name(3297828886, "群名片") == "苜蓿")
+    srv.reply_config["known_users"] = {"666666666": "苜蓿", "111": "小明"}
+    check("别名优先", srv.display_name(666666666, "群名片") == "苜蓿")
     check("无别名回退群名片", srv.display_name(222, "群名片") == "群名片")
     check("都无回退QQ号", srv.display_name(333, "") == "333")
     # normalize 兼容 dict / json字符串
     n = srv.normalize_known_users('{"111":"aaa","222":"bbb"}')
     check("normalize json字符串", n == {"111": "aaa", "222": "bbb"})
     # prompt 里体现别名
-    srv.reply_config["owner_qq"] = 3297828886
-    item = {"id": "i1", "message_type": "private", "user_id": 3297828886, "group_id": 0,
+    srv.reply_config["owner_qq"] = 666666666
+    item = {"id": "i1", "message_type": "private", "user_id": 666666666, "group_id": 0,
             "nickname": "群名片", "text": "在吗", "messages": ["在吗"], "qq_message_id": "q1",
             "qq_message_ids": ["q1"], "context": [], "selection_required": False, "trigger": "owner"}
     p = srv.format_prompt(item)
@@ -252,7 +252,7 @@ def test_p3_observe_window():
     srv.reply_config["group_aggregate_window_ms"] = 200
     srv.reply_config["aggregate_scope"] = "all"
     srv.reply_config["group_reply_mode"] = "at_only"
-    srv.reply_config["owner_qq"] = 3297828886
+    srv.reply_config["owner_qq"] = 666666666
     for i in range(3):
         data = {"message_type": "group", "user_id": 100 + i, "group_id": 9, "message_id": f"ob{i}",
                 "sender": {"nickname": f"u{100+i}"}, "message": [{"type": "text", "data": {"text": f"闲聊{i}"}}],
