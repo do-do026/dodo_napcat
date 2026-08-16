@@ -11,8 +11,8 @@
 
 ## 1. 当前部署拓扑
 ```
-远端服务器 101.43.38.124（腾讯云轻量，lighthouse，密码记忆库有）
-├─ systemd: qq-napcat        → QQ 渡渡 810429614 + NapCat（ws6098 / webui6099）
+远端服务器 <你的服务器地址>（腾讯云轻量，lighthouse，密码记忆库有）
+├─ systemd: qq-napcat        → QQ 渡渡 <机器人QQ号> + NapCat（ws6098 / webui6099）
 ├─ 脚本/进程: dodo_bridge_server.py（~/dodo_napcat/server/，run_dodo_bridge.sh 启停）
 │   └─ 监听 0.0.0.0:8080（HTTP，BRIDGE_TOKEN 鉴权；旧 qq-bridge-universal 已停并 disable）
 └─ 数据：~/.dodo_napcat/{queue,context,reply_config}.json
@@ -26,7 +26,7 @@ Operit（一加手机）
 ## 2. 关键命令/路径
 | 项 | 值 |
 |---|---|
-| SSH | `sshpass -e ssh lighthouse@101.43.38.124`（密码在记忆库「凭证」） |
+| SSH | `sshpass -e ssh lighthouse@<你的服务器地址>`（密码在记忆库「凭证」） |
 | 服务器桥启停 | `cd ~/dodo_napcat/server && bash run_dodo_bridge.sh start\|stop\|restart\|status` |
 | 服务器健康 | `curl http://127.0.0.1:8080/health` |
 | 队列 | `/api/queue/stats` `/api/queue/clear`（带 `X-Bridge-Token`） |
