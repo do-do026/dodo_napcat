@@ -1,0 +1,19 @@
+[Unit]
+Description=dodo_napcat bridge server (NapCat -> Operit)
+After=network.target qq-napcat.service
+Wants=qq-napcat.service
+
+[Service]
+Type=simple
+User=lighthouse
+WorkingDirectory=/home/lighthouse/dodo_napcat/server
+EnvironmentFile=/home/lighthouse/dodo_napcat/server/run_dodo_bridge.env
+ExecStart=/usr/bin/python3 /home/lighthouse/dodo_napcat/server/dodo_bridge_server.py
+Restart=always
+RestartSec=3
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
