@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "toolpkg_id": "com.operit.napcat_pro",
+  "version": "0.2.0",
+  "main": "dist/main.js",
+  "display_name": {
+    "zh": "渡渡 NapCat（增强桥）",
+    "en": "Dodo NapCat Pro"
+  },
+  "description": {
+    "zh": "NapCat → Operit → QQ 统一桥（干净重写版）。服务器侧 dodo_bridge_server 负责收消息/队列/发送（原生引用、at_only、stale清理）；本包为 Operit 侧消费端：轮询 /api/pull → 调 Operit AI → 回传 /api/reply。支持对话绑定双模式（fixed 绑定指定对话 / auto 按群ID·私聊QQ自动开对话）、角色卡、选择性忽略哨兵、批量领取。默认不自动开（enabled=false），群模式默认仅回艾特。",
+    "en": "Unified NapCat to Operit to QQ bridge (clean rewrite). Server side handles receive/queue/send; this package is the Operit consumer: poll /api/pull, call Operit AI, reply back."
+  },
+  "enabled_by_default": false,
+  "subpackages": [
+    {
+      "id": "napcat_pro_bridge",
+      "entry": "dist/packages/napcat_pro_bridge.js",
+      "enabled_by_default": false,
+      "display_name": {
+        "zh": "渡渡 NapCat 桥",
+        "en": "Dodo NapCat Bridge"
+      },
+      "description": {
+        "zh": "配置、绑定并控制 NapCat → Operit → QQ 桥（P2 消费端）。连接服务器桥、对话绑定（fixed/auto）、轮询消费、AI 自动回复、选择性忽略。",
+        "en": "Configure and control the NapCat to Operit to QQ bridge consumer."
+      }
+    }
+  ],
+  "resources": []
+}
