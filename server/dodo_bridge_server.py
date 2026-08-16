@@ -47,35 +47,56 @@ RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", "30"))  # BUG-04�
 STALE_MSG_TTL_SECONDS = int(os.environ.get("STALE_MSG_TTL_SECONDS", "300"))  # 需求：丢弃 5 分钟前的内容
 IGNORE_SENTINEL = "[[QQ_BRIDGE_IGNORE]]"
 
+
+# 需求（2026-08-17）：所有「涉及数量」的参数都可 env 配置，且带默认兜底值。
+# 优先级：/api/config（运行时可改）> config.json（持久化）> env 默认（本函数）> 硬编码兜底。
+def _env_int(name, dft):
+    try:
+        return int(os.environ.get(name, dft))
+    except Exception:
+        return dft
+
+
+def _env_bool(name, dft):
+    v = os.environ.get(name)
+    if v is None:
+        return dft
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
 GROUP_MODES = {"off", "at_only", "keyword_or_at", "selective", "all"}
 PRIVATE_MODES = {"off", "owner_only", "whitelist", "keyword", "all"}
 
 DEFAULT_REPLY_CONFIG = {
-    "owner_qq": 0,
-    "owner_always_reply": True,
-    "group_reply_mode": "at_only",   # 需求（2026-08-16）：默认仅回复艾特，群里消息多防刷屏
+    "owner_qq": _env_int("NAPCAT_OWNER_QQ", 0),
+    "owner_always_reply": _env_bool("NAPCAT_OWNER_ALWAYS_REPLY", True),
+    "group_reply_mode": os.environ.get("NAPCAT_GROUP_REPLY_MODE", "at_only"),   # 需求（2026-08-16）：默认仅回复艾特，群里消息多防刷屏
     "keywords": [],
-    "private_reply_mode": "owner_only",
+    "private_reply_mode": os.environ.get("NAPCAT_PRIVATE_REPLY_MODE", "owner_only"),
     "private_whitelist": [],
-    "group_context_limit": 12,
-    "private_context_limit": 8,
-    "mention_context_limit": 5,
-    "following_context_limit": 1,
-    "debounce_seconds": 0,
-    "split_reply_enabled": True,
-    "reply_part_delay_ms": 450,
-    "quote_reply_enabled": True,   # 回复时原生引用原消息（reply 段）
+    "group_context_limit": _env_int("NAPCAT_GROUP_CONTEXT_LIMIT", 12),
+    "private_context_limit": _env_int("NAPCAT_PRIVATE_CONTEXT_LIMIT", 8),
+    "mention_context_limit": _env_int("NAPCAT_MENTION_CONTEXT_LIMIT", 5),
+    "following_context_limit": _env_int("NAPCAT_FOLLOWING_CONTEXT_LIMIT", 1),
+    "debounce_seconds": _env_int("NAPCAT_DEBOUNCE_SECONDS", 0),
+    "split_reply_enabled": _env_bool("NAPCAT_SPLIT_REPLY_ENABLED", True),
+    "reply_part_delay_ms": _env_int("NAPCAT_REPLY_PART_DELAY_MS", 450),
+    "quote_reply_enabled": _env_bool("NAPCAT_QUOTE_REPLY_ENABLED", True),   # 回复时原生引用原消息（reply 段）
     # P3（2026-08-16）：G1 群聚合 + G2 上下文双模式（需求16/17，默认不改变现有行为）
-    "group_aggregate_window_ms": 0,  # 0=不聚合（默认，保持现行为）；>0=群触发消息按窗口合成一轮
-    "at_context_mode": "count",      # count=取最后N条（默认）/ time=只读艾特前后N秒（需求17）
-    "at_context_before_sec": 10,     # time 模式：艾特前秒数
-    "at_context_after_sec": 10,      # time 模式：艾特后秒数
-    "at_context_count": 12,          # count 模式：上下文条数
+    "group_aggregate_window_ms": _env_int("NAPCAT_GROUP_AGGREGATE_WINDOW_MS", 0),  # 0=不聚合（默认，保持现行为）；>0=群触发消息按窗口合成一轮
+    "at_context_mode": os.environ.get("NAPCAT_AT_CONTEXT_MODE", "count"),      # count=取最后N条（默认）/ time=只读艾特前后N秒（需求17）
+    "at_context_before_sec": _env_int("NAPCAT_AT_CONTEXT_BEFORE_SEC", 10),     # time 模式：艾特前秒数
+    "at_context_after_sec": _env_int("NAPCAT_AT_CONTEXT_AFTER_SEC", 10),      # time 模式：艾特后秒数
+    "at_context_count": _env_int("NAPCAT_AT_CONTEXT_COUNT", 10),          # count 模式：上下文条数
     # P3（2026-08-16）：G7 成员别名映射（需求18：QQ号→可读昵称，如 <QQ号>→苜蓿）
     "known_users": {},               # {"<QQ号>": "苜蓿", ...}
     # P3（2026-08-16 23:56）：批量观察轮（需求19，用户需求）
-    "aggregate_scope": "trigger",    # trigger=只聚合艾特/关键词触发消息（5秒防抖）；all=聚合所有群消息（20秒批量观察，AI选择回复/ignore全部）
-    "repeat_flood_detect": True,     # 复读检测：窗口内消息文本归一化后高度重复 → 标记复读，AI只主动回一次不逐条引用
+    "aggregate_scope": os.environ.get("NAPCAT_AGGREGATE_SCOPE", "trigger"),    # trigger=只聚合艾特/关键词触发消息（5秒防抖）；all=聚合所有群消息（20秒批量观察，AI选择回复/ignore全部）
+    "repeat_flood_detect": _env_bool("NAPCAT_REPEAT_FLOOD_DETECT", True),     # 复读检测：窗口内消息文本归一化后高度重复 → 标记复读，AI只主动回一次不逐条引用
+    # P3（2026-08-17）：waifu 分句（G4，移植 qqbot-pro）——每 N 句合成一条；`。！？\n` 计数、连续换行归一化、max_chars 兜底
+    "private_chunk_size": _env_int("NAPCAT_PRIVATE_CHUNK_SIZE", 3),       # 私聊：每3句一条
+    "group_chunk_size": _env_int("NAPCAT_GROUP_CHUNK_SIZE", 5),         # 群聊：每5句一条
+    "reply_chunk_max_chars": _env_int("NAPCAT_CHUNK_MAX_CHARS", 400),    # 无句末符文本的字符安全兜底（G4）
 }
 
 # ==================== 全局状态 ====================
@@ -192,6 +213,9 @@ def normalize_config(value):
         "known_users": normalize_known_users(raw.get("known_users", {})),
         "aggregate_scope": "all" if str(raw.get("aggregate_scope", "trigger")).lower() == "all" else "trigger",
         "repeat_flood_detect": raw.get("repeat_flood_detect", True) is not False,
+        "private_chunk_size": max(1, min(20, int(raw.get("private_chunk_size", 3) or 0))),
+        "group_chunk_size": max(1, min(20, int(raw.get("group_chunk_size", 5) or 0))),
+        "reply_chunk_max_chars": max(1, min(2000, int(raw.get("reply_chunk_max_chars", 400) or 0))),
     }
 
 
@@ -898,19 +922,55 @@ def append_bot_reply(item, reply):
     })
 
 
-def split_reply_parts(reply):
+def _waifu_split_text(text, flush_sentences, max_chars):
+    """G4 waifu chunker（移植 qqbot-pro waifu_chunker.js，批处理语义）。
+
+    句末计数：。！？\\n（连续换行只计 1 句）；输出归一化：连续换行压成单个换行；
+    max_chars 独立安全兜底，避免无句末符文本无限增长。返回片段数组。
+    """
+    def _norm_newlines(s):
+        return re.sub(r"\n{2,}", "\n", s)
+    SENTENCE_END = set("。！？\n")
+    buffer = str(text or "")
+    out = []
+    while True:
+        count = 0
+        last_nl = False
+        i = 0
+        n = len(buffer)
+        hit = False
+        while i < n:
+            ch = buffer[i]
+            if ch == "\n":
+                if not last_nl:
+                    count += 1
+                last_nl = True
+            else:
+                if ch in SENTENCE_END:
+                    count += 1
+                last_nl = False
+            i += 1
+            if count >= flush_sentences or i >= max_chars:
+                hit = True
+                break
+        if not hit:
+            break
+        seg = _norm_newlines(buffer[:i]).strip()
+        if seg:
+            out.append(seg)
+        buffer = buffer[i:]
+    tail = _norm_newlines(buffer).strip()
+    if tail:
+        out.append(tail)
+    return out
+
+
+def split_reply_parts(reply, scene="group"):
+    """G4 waifu 分句：私聊每 private_chunk_size 句一条，群聊每 group_chunk_size 句一条。"""
     if not reply_config["split_reply_enabled"]:
         return [reply.strip()]
-    parts, start = [], 0
-    for index, char in enumerate(reply):
-        if char == "。":
-            part = reply[start:index + 1].strip()
-            if part:
-                parts.append(part)
-            start = index + 1
-    tail = reply[start:].strip()
-    if tail:
-        parts.append(tail)
+    n = reply_config["group_chunk_size"] if scene == "group" else reply_config["private_chunk_size"]
+    parts = _waifu_split_text(reply, max(1, int(n)), reply_config.get("reply_chunk_max_chars", 400))
     return parts or [reply.strip()]
 
 
@@ -940,7 +1000,7 @@ def send_reply_parts(item, reply):
         effective_reply = str(item.get("reply") or reply)
         target_qid = item.get("quote_target_id") or target_qid
     else:
-        parts = split_reply_parts(clean_reply)
+        parts = split_reply_parts(clean_reply, item.get("message_type") or "group")
         effective_reply = clean_reply
         item["reply"] = clean_reply
         item["reply_parts"] = parts
@@ -1025,6 +1085,9 @@ class Handler(BaseHTTPRequestHandler):
                     "aggregate_scope": reply_config["aggregate_scope"],
                     "repeat_flood_detect": reply_config["repeat_flood_detect"],
                     "known_users": reply_config["known_users"],
+                    "private_chunk_size": reply_config["private_chunk_size"],
+                    "group_chunk_size": reply_config["group_chunk_size"],
+                    "reply_chunk_max_chars": reply_config["reply_chunk_max_chars"],
                     "pull_max_count": PULL_MAX_COUNT,
                     "rate_limit_per_min": RATE_LIMIT_PER_MIN,
                 },
