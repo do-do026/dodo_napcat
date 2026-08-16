@@ -38,3 +38,23 @@
 - 服务器队列/聚合桶是**内存态**，重启丢未 flush 桶 → 未来可考虑 flush 前持久化
 - 批量领取（count=N）后 Operit 侧是 for 循环**串行**处理 → 后续可开有界并发（2~3）+ 令牌桶
 - 手机出口 IP（移动 NAT）会变 → 防火墙收紧后若连不上，先查 IP 是否变了
+
+## 能力差异对照：qqbot-pro（官方 Bot）已做 vs dodo_napcat（NapCat）状态（2026-08-17）
+> 用途：知道「还有什么细节可以继续灌」。NapCat 支持面内可做的列「待灌」，平台不支持的标 ⚪。
+
+| qqbot-pro 能力 | dodo_napcat 状态 | 备注 |
+|---|---|---|
+| G4 waifu chunker（。！？\n/归一化/400兜底） | ✅ 已灌（服务器侧，私3群5） | 但**无流式**（dodo 批处理拿完整回复） |
+| 上下文三态 off/automatic/agent_on_demand | 🟡 部分：dodo 是 time/count 双模式 | automatic≈count；agent_on_demand 待灌（get_group_msg_history 按需拉） |
+| G7 成员映射 | 🟡 known_users 别名 ✅；**群昵称自动映射（get_group_member_info）待灌** | UI 管理成员绑定也待做 |
+| 发送可靠性：T045 业务码校验+segmentResults | 🔴 待灌 | dodo 有断点续发（sent_part_count），无业务码校验 |
+| T046 watchdog + 硬超时 | 🔴 待灌（Operit 侧 aiTimeoutMs 已传，JS 侧 Promise.race 兜底缺） | 防 tick 永久挂起 |
+| 空回复重试（单聊3次/群1次） | 🔴 待灌 | 目前空回复=忽略 |
+| 上下文缓存 24h 恢复 | 🟡 context.json 持久化 ✅，无 24h 恢复窗口语义 | |
+| 消息去重（msg_seq） | 🟡 seen_ids 去重 ✅，无 msg_seq | |
+| G2 automatic 邻近上下文附件 | 🟡 following_context ✅（触发后紧接1条） | |
+| G3 replyTo 过期降级（anchor 时效/fallback） | 🔴 待灌 | 目前 replyTo 只做编号映射引用 |
+| 图片发送（本地/URL） | 🔴 P4 | NapCat image 段支持 |
+| 按钮回调/群生命周期事件 | ⚪ NapCat 无此模型 | 不做 |
+| 官方 stream_messages | ⚪ 产品已否 | 不做 |
+| 幂等/access_token 缓存/错误码结构化 | 🔴 可靠性 Sprint（后续） | |
