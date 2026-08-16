@@ -473,8 +473,30 @@ function onApplicationCreate() {
   registerIpc();
 }
 
+function autoStartIfEnabled() {
+  // 重启/重新加载后，若 enabled=true 则自动恢复轮询（符合「开关开了就自动跑」预期）
+  try {
+    if (!getConfig().enabled) return;
+    if (state.running) return;
+    startLoop();
+    console.log("[napcat_pro] auto-start loop (enabled=true)");
+  } catch (e) {
+    console.warn("[napcat_pro] auto-start skipped: " + String((e && e.message) || e));
+  }
+}
+
 function registerToolPkg() {
   registerIpc();
+  // 重启自动恢复：application_on_create 时若 enabled=true 自动拉起轮询
+  try {
+    ToolPkg.registerAppLifecycleHook({
+      id: "napcat_pro_auto_start",
+      event: "application_on_create",
+      function: autoStartIfEnabled
+    });
+  } catch (e) {
+    console.warn("[napcat_pro] lifecycle hook registration skipped: " + String((e && e.message) || e));
+  }
   // P5：注册 compose_dsl 设置页 + 侧边栏入口（参考 qqbot_pro / market）
   // screen 必须传模块函数（require 进来的 .default），不能传字符串路径。
   try {
