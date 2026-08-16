@@ -15,7 +15,7 @@ dodo_napcat/
 ├── TROUBLESHOOTING.md ← 排障记录
 ├── IDEAS.md           ← 脑内灵感 / 待办 / 参考网址
 ├── PLAN.md            ← v1 历史规划（已被 DESIGN.md 取代）
-└── server/            ← 服务器侧桥（已部署 101.43.38.124:8080）
+└── server/            ← 服务器侧桥（已部署 <你的服务器地址>:8080）
 ```
 
 ## 一句话架构
@@ -28,5 +28,5 @@ QQ/NapCat(远端服务器) ──ws6098──► dodo_bridge_server.py(队列/�
 
 ## 运行注意
 - 自动回复**默认关闭**（`enabled=false`），群模式默认 **at_only**；测试前先问初尘：绑哪个对话 / 哪个群 / 开不开。
-- 服务器 `BRIDGE_TOKEN` / `NAPCAT_WS_TOKEN` 走服务器 `.env`（实际值见记忆库+服务器，**勿提交仓库**）；QQ=810429614。
+- 服务器 `BRIDGE_TOKEN` / `NAPCAT_WS_TOKEN` 走服务器 `.env`（实际值见记忆库+服务器，**勿提交仓库**）；QQ=<机器人QQ号>。
 - 新 ToolPkg 工具**当前会话不可见，需新开会话**才能调用（Operit 机制）。
