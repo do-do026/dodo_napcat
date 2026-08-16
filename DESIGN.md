@@ -27,7 +27,7 @@
 
 | # | 问题 | 决策 |
 |---|---|---|
-| 1 | NapCat 部署在哪 | **远端服务器**（101.43.38.124）。本地直连**当前不做**，但接口/架构保留可做空间 |
+| 1 | NapCat 部署在哪 | **远端服务器**（<你的服务器地址>）。本地直连**当前不做**，但接口/架构保留可做空间 |
 | 2 | 产物形态 | **新建独立包**。三包可用代码直接复用；market 硬编码多 → **写干净新包**，只挑有用部分 |
 | 3 | 灌入范围 | qqbot-pro 功能按 **NapCat 支持矩阵** 决定做/不做（见 §5） |
 | 4 | 排障优先级 | **不修老屎**，新包内置规避（如 universal 的 selective 流量爆炸 → 新包规则层自带预过滤） |
@@ -57,7 +57,7 @@
 | 15 | **开启/轮询时丢弃 N 分钟前的内容**：到底丢不丢、丢多久（N）、丢多少，以后可能调整 | P2（服务器已实现 TTL 清理，参数需可调） |
 | 16 | **at_only 被艾特时，只读「被艾特时间点前后 N 秒」的上下文**（N 由 UI/agent 可调 env）；更久远的**不读**；这是**非顺序读取**——之前 gateway 堆 200 条 AI 从最早读的坑；**可与「丢弃非艾特消息」功能联合使用**（只保留艾特前后有效窗口） | **P3**（编排层上下文，纳入 G2） |
 | 17 | **上下文读取双模式（可切换）**：`time`=只保留艾特前后 N 秒内上下文（消息爆炸的群）；`count`=保留最后 N 条上下文（消息正常的群，旧 universal 行为）。两种分支都保留，UI/agent 可选。 | **P3**（纳入 G2 上下文三态） |
-| 18 | **QQ 昵称别名映射**：绑定 QQ 号→可读昵称（如 3297828886→苜蓿），prompt/上下文用别名称呼成员；未绑定者显示群名片/昵称/QQ号。 | **P3**（G7 成员映射 known_users，服务器已实现） |
+| 18 | **QQ 昵称别名映射**：绑定 QQ 号→可读昵称（如 <主人QQ号>→苜蓿），prompt/上下文用别名称呼成员；未绑定者显示群名片/昵称/QQ号。 | **P3**（G7 成员映射 known_users，服务器已实现） |
 | 19 | **批量观察轮（艾特/关键词防抖 + AI 选择性回复）**：群开启艾特+关键词（渡渡）触发，往前读 N 条上下文；窗口内（如 5 秒）艾特/关键词触发**合并成一轮**；若窗口是**复读刷屏**→AI 只主动回一次不逐条引用；若**不同内容**→AI 自行选择回复哪些（`[replyTo:N]` 精确引用）或全部忽略。可切换 `scope=all`：窗口拉长（如 20 秒）收**所有群消息**批量观察，AI 选感兴趣的回复 / ignore 全部。 | **P3**（G1 聚合桶 + 复读检测 + G3 + prompt 策略，服务器已实现） |
 
 **需求 16/17 技术要点**（实现时参考）：
@@ -222,7 +222,7 @@
 dodo_napcat（新包，ToolPkg，包 ID 待定）
 ├─ 通道层（Transport 抽象）
 │   ├─ RemoteServerTransport【当前】：轮询远端桥服务器 HTTP API（继承 universal 已验证通道）
-│   │    └─ 服务器侧：dodo_bridge_server.py（部署 101.43.38.124，干净重写，修复 BUG-01~05）
+│   │    └─ 服务器侧：dodo_bridge_server.py（部署 <你的服务器地址>，干净重写，修复 BUG-01~05）
 │   └─ DirectWsTransport【预留，当前不做】：market 的 Python ws 桥模式（连远端/本地 ws + HTTP 发送）
 │        —— 接口预留，满足「本地直连可做空间」
 ├─ 事件层：OneBot11 事件 → 标准化 {scene, userId, groupId, text, segments, quoteId, atSelf, msgId}
@@ -292,9 +292,9 @@ dodo_napcat（新包，ToolPkg，包 ID 待定）
 | 阶段 | 内容 | 产出 |
 |---|---|---|
 | **P0 侦察** | 三包源码已读（已完成） | DESIGN.md（本文） |
-| **P1 服务器侧** | 干净重写 `server/dodo_bridge_server.py`（队列状态机 + 预过滤 + 批量领取 + 队列管理 + 短上下文 + 原生引用 + stale清理） | ✅ 代码 22/22 测试 + **已部署** 101.43.38.124（ws_connected） + 传输层收发/引用已验证 |
+| **P1 服务器侧** | 干净重写 `server/dodo_bridge_server.py`（队列状态机 + 预过滤 + 批量领取 + 队列管理 + 短上下文 + 原生引用 + stale清理） | ✅ 代码 22/22 测试 + **已部署** <你的服务器地址>（ws_connected） + 传输层收发/引用已验证 |
 | **P2 Operit 基座** | ToolPkg `com.operit.napcat_pro`（dist/main.js + napcat_pro_bridge 子包 9 工具）：Transport 抽象（RemoteServerTransport）+ 规则层（set_reply_rules 透传）+ 配置 schema（NAPCAT_* env + clamp）+ 对话绑定双模式（fixed/auto）+ 轮询消费 + AI 自动回复 + 选择性忽略 | ✅ 代码完成 + 烧录成功（工具已注册）；**待新会话调用测试**（Operit 机制：新工具当前会话不可见） |
-| **P3 灌 AI 编排** | 服务器侧：**G1 群聚合桶** ✅ + **G2 上下文双模式**（time/count，需求16/17）✅ + **G3 replyTo 协议头**（`[replyTo:N]`/JSON→原生引用编号消息）✅ + **G7 成员别名映射**（known_users，需求18：3297828886→苜蓿）✅；剩：get_group_member_info 群昵称自动映射（可选）+ Operit 侧配合 | ✅ **P3 服务器侧全部完成**（测试 39/39，已部署；默认聚合关/count 模式，行为不变）；Operit 侧零改动 |
+| **P3 灌 AI 编排** | 服务器侧：**G1 群聚合桶** ✅ + **G2 上下文双模式**（time/count，需求16/17）✅ + **G3 replyTo 协议头**（`[replyTo:N]`/JSON→原生引用编号消息）✅ + **G7 成员别名映射**（known_users，需求18：<主人QQ号>→苜蓿）✅；剩：get_group_member_info 群昵称自动映射（可选）+ Operit 侧配合 | ✅ **P3 服务器侧全部完成**（测试 39/39，已部署；默认聚合关/count 模式，行为不变）；Operit 侧零改动 |
 | **P4 附加层** | 语音 / 表情包 / QQ空间 / 撤回 / @ / 输入态 / 图片 | 附加能力齐全 |
 | **P5 UI + 留档** | compose_dsl + WebView 两套 UI；README / ARCHITECTURE / STATUS / HANDOFF + GitHub（可选） | 产品完成 |
 
@@ -302,14 +302,14 @@ dodo_napcat（新包，ToolPkg，包 ID 待定）
 
 ```
 # 通道（RemoteServerTransport）
-NAPCAT_BRIDGE_URL=http://101.43.38.124:8080      # 远端桥服务器
+NAPCAT_BRIDGE_URL=http://<你的服务器地址>:8080      # 远端桥服务器
 NAPCAT_BRIDGE_TOKEN=                             # 服务器鉴权 token（长随机串，勿明文入库）
 NAPCAT_POLL_INTERVAL_MS=3000
 NAPCAT_PULL_COUNT=3                              # 批量领取条数（修复 BUG-02）
 
 # 身份
-NAPCAT_SELF_ID=810429614                         # 渡渡 QQ 号
-NAPCAT_OWNER_QQ=3297828886                       # 初尘 QQ 号
+NAPCAT_SELF_ID=<机器人QQ号>                         # 渡渡 QQ 号
+NAPCAT_OWNER_QQ=<主人QQ号>                       # 初尘 QQ 号
 NAPCAT_CHAT_BINDING_MODE=fixed                   # fixed=绑定 NAPCAT_FIXED_CHAT_ID / auto=按 group:{gid}·private:{uid} 自动开对话
 NAPCAT_FIXED_CHAT_ID=                            # 仅 fixed 模式用
 NAPCAT_CHARACTER_CARD=渡渡                        # 角色卡名
@@ -340,7 +340,7 @@ NAPCAT_WAIFU_PRIVATE_SENTENCES=3 / GROUP=5
 NAPCAT_VOICE_ENABLED=false
 NAPCAT_VOICE_API_KEY= / NAPCAT_VOICE_MODEL=qwen3-tts-vc-2026-01-22 / NAPCAT_VOICE_VOICE_ID=
 NAPCAT_STICKER_ENABLED=true / NAPCAT_STICKER_DIR=/sdcard/Download/Operit/plugins/<pkgId>/sticker_pack
-NAPCAT_QZONE_ENABLED=true / NAPCAT_QZONE_UIN=810429614
+NAPCAT_QZONE_ENABLED=true / NAPCAT_QZONE_UIN=<机器人QQ号>
 ```
 
 > 注：`NAPCAT_QZONE_COOKIE` 不落环境变量（易失效+敏感），存 state 文件，走 `get_cookies` 自动刷新。
@@ -356,7 +356,7 @@ NAPCAT_QZONE_ENABLED=true / NAPCAT_QZONE_UIN=810429614
 
 ### 10.2 下一步行动
 
-- **P1（进行中）**：写干净版 `server/dodo_bridge_server.py` → 部署到 101.43.38.124 验证 /health → 初尘测试 → 推仓库
+- **P1（进行中）**：写干净版 `server/dodo_bridge_server.py` → 部署到 <你的服务器地址> 验证 /health → 初尘测试 → 推仓库
 - **P2**：Operit 侧 ToolPkg 骨架（Transport 抽象 + 规则层 + 配置 schema）
 - **P3-P5**：按 §8 推进
 
