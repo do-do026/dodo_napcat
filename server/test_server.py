@@ -73,12 +73,31 @@ def test_selective_prefilter():
 
 
 def test_split():
-    print("[3] split_reply_parts")
+    print("[3] G4 waifu 分句（。！？\\n计数 / 连续换行归一化 / 400兜底）")
     srv.reply_config["split_reply_enabled"] = True
-    parts = srv.split_reply_parts("第一句。第二句。第三句")
-    check("按句号切3段", len(parts) == 3 and parts[-1] == "第三句")
-    parts = srv.split_reply_parts("没有句号的一段")
-    check("无句号整段", parts == ["没有句号的一段"])
+    srv.reply_config["private_chunk_size"] = 3
+    srv.reply_config["group_chunk_size"] = 5
+    # 群聊默认 5 句：3 句不足 → 1 段
+    parts = srv.split_reply_parts("今天吃了。明天去玩。后天上班。", "group")
+    check("群聊3句<5 → 1段", len(parts) == 1 and parts[0] == "今天吃了。明天去玩。后天上班。")
+    # 群聊 7 句 → 2 段（5+2）
+    parts = srv.split_reply_parts("一。二。三。四。五。六。七。", "group")
+    check("群聊7句→2段", len(parts) == 2 and parts[0] == "一。二。三。四。五。")
+    # 私聊默认 3 句：7 句 → 3 段（3+3+1）
+    parts = srv.split_reply_parts("一。二。三。四。五。六。七。", "private")
+    check("私聊7句→3段", len(parts) == 3 and parts[0] == "一。二。三。")
+    # 连续换行归一化（只计 1 句）
+    parts = srv.split_reply_parts("第一行\n\n\n第二行\n\n第三行\n", "group")
+    check("连续换行归一化→1段", len(parts) == 1 and "\n\n" not in parts[0])
+    # 400 字符兜底（无标点长文本）
+    parts = srv.split_reply_parts("啊" * 900, "group")
+    check("900字无标点→400/400/100", len(parts) == 3 and len(parts[0]) == 400 and len(parts[2]) == 100)
+    # emoji 不破坏切分
+    parts = srv.split_reply_parts("好耶🎉！🐾太棒了。再来一个🚀？最后一发💥。", "private")
+    check("emoji混排4句limit3→2段", len(parts) == 2)
+    # 无句末符短文本 → 整段
+    parts = srv.split_reply_parts("没有标点的一段话", "group")
+    check("短文本整段", len(parts) == 1)
 
 
 def test_batch_claim():
