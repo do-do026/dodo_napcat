@@ -17,7 +17,7 @@ const STATE_PATH = "/sdcard/Download/Operit/plugins/com.operit.napcat_pro/state.
 // ==================== 配置 schema（持久化 > env > 默认；数值 clamp；枚举校验） ====================
 const DEFAULTS = {
   enabled: false,                    // 需求13：默认不自动开
-  bridgeUrl: "http://101.43.38.124:8080",
+  bridgeUrl: "",                     // 用户自填远端桥服务器地址（不在仓库内置真实地址）
   bridgeToken: "",
   pollIntervalMs: 3000,              // 3000~60000
   pullCount: 3,                      // 1~10，批量领取（BUG-02）
@@ -475,7 +475,32 @@ function onApplicationCreate() {
 
 function registerToolPkg() {
   registerIpc();
-  // P5 在此注册 compose_dsl + WebView UI（两套并存，需求5）
+  // P5：注册 compose_dsl 设置页 + 侧边栏入口（参考 qqbot_pro / market）
+  // screen 必须传模块函数（require 进来的 .default），不能传字符串路径。
+  try {
+    const napcatSettingsScreen = require("./ui/napcat_settings/index.ui.js");
+    const UI_ROUTE = "toolpkg:com.operit.napcat_pro:ui:napcat_settings";
+    ToolPkg.registerUiRoute({
+      id: "napcat_settings",
+      route: UI_ROUTE,
+      runtime: "compose_dsl",
+      screen: napcatSettingsScreen.default || napcatSettingsScreen,
+      params: {},
+      keepAlive: false,
+      title: { zh: "渡渡 NapCat 桥设置", en: "Dodo NapCat Bridge Settings" }
+    });
+    ToolPkg.registerNavigationEntry({
+      id: "napcat_settings_sidebar",
+      route: UI_ROUTE,
+      surface: "main_sidebar_plugins",
+      title: { zh: "渡渡 NapCat 桥", en: "Dodo NapCat Bridge" },
+      icon: "forum",
+      order: 95
+    });
+    console.log("[napcat_pro] UI route registered");
+  } catch (error) {
+    console.warn("[napcat_pro] UI route registration skipped: " + String((error && error.message) || error));
+  }
   return true;
 }
 
