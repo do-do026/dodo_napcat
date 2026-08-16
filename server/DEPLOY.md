@@ -1,7 +1,7 @@
 # dodo_napcat · P1 服务器侧桥部署指南
 
-> 目标：把干净版 `dodo_bridge_server.py` 部署到远端服务器 101.43.38.124，验证 `/health`。
-> 前置：NapCat 已在服务器本地运行（ws://127.0.0.1:6098，token `<ws-token>`），QQ=810429614。
+> 目标：把干净版 `dodo_bridge_server.py` 部署到远端服务器 <你的服务器地址>，验证 `/health`。
+> 前置：NapCat 已在服务器本地运行（ws://127.0.0.1:6098，token `<ws-token>`），QQ=<机器人QQ号>。
 
 ## 1. 本地自测（已完成 ✅）
 
@@ -15,12 +15,12 @@ python3 test_server.py                        # 冒烟 18/18
 
 ```bash
 # 在服务器上建目录
-ssh lighthouse@101.43.38.124 'mkdir -p ~/dodo_napcat/server'
+ssh lighthouse@<你的服务器地址> 'mkdir -p ~/dodo_napcat/server'
 
 # 从本机上传（3 个文件 + env）
-scp dodo_bridge_server.py lighthouse@101.43.38.124:~/dodo_napcat/server/
-scp run_dodo_bridge.sh  lighthouse@101.43.38.124:~/dodo_napcat/server/
-scp .env.example        lighthouse@101.43.38.124:~/dodo_napcat/server/
+scp dodo_bridge_server.py lighthouse@<你的服务器地址>:~/dodo_napcat/server/
+scp run_dodo_bridge.sh  lighthouse@<你的服务器地址>:~/dodo_napcat/server/
+scp .env.example        lighthouse@<你的服务器地址>:~/dodo_napcat/server/
 ```
 
 ## 3. 服务器侧配置
@@ -31,7 +31,7 @@ cp .env.example run_dodo_bridge.env
 # 编辑 run_dodo_bridge.env 确认：
 #   NAPCAT_WS_URL=ws://127.0.0.1:6098
 #   NAPCAT_WS_TOKEN=<your-ws-token>
-#   BOT_QQ=810429614
+#   BOT_QQ=<机器人QQ号>
 #   BRIDGE_TOKEN=<your-bridge-token>（沿用现值，勿提交真实值）
 #   LISTEN_HOST=127.0.0.1  LISTEN_PORT=8080
 ```
@@ -59,7 +59,7 @@ sudo systemctl status dodo-bridge
 
 ## 6. 验证清单
 
-- [ ] `curl http://127.0.0.1:8080/health` → `ok:true, ws_connected:true, bot_qq:810429614`
+- [ ] `curl http://127.0.0.1:8080/health` → `ok:true, ws_connected:true, bot_qq:<机器人QQ号>`
 - [ ] 群里 @渡渡 → 队列 pending+1（`/api/queue/stats`）
 - [ ] selective 模式下普通群消息**不**排队（BUG-01 验证）
 - [ ] 带 token 调 `/api/pull?count=5` → `has_message:true, items:[...]`
