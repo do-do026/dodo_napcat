@@ -17,7 +17,7 @@
         "en": "Configure bridge connection and behavior."
       },
       "parameters": [
-        {"name":"bridge_url","type":"string","required":false,"description":"远端桥服务器地址，如 http://101.43.38.124:8080"},
+        {"name":"bridge_url","type":"string","required":false,"description":"远端桥服务器地址，如 http://&lt;你的服务器地址&gt;:8080"},
         {"name":"token","type":"string","required":false,"description":"Bridge Token；留空保留旧值"},
         {"name":"poll_interval_ms","type":"number","required":false,"description":"轮询间隔 3000~60000"},
         {"name":"pull_count","type":"number","required":false,"description":"批量领取条数 1~10"},
