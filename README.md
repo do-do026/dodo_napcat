@@ -58,3 +58,11 @@ QQ/NapCat(远端服务器) ──ws6098──► dodo_bridge_server.py(队列/�
 3. **验证**：`test_server` = health 连通性测试；`status` = 服务器+队列+处理统计；`napcat_pro_server` 子包可管服务器的守护/重登/二维码。
 
 > 一句话：health 连不上 = ①服务器没起 ②8080 没放行/没监听 0.0.0.0 ③bridge_url/token 填错。
+
+### 换端口怎么办（比如 6199）
+所有端口都是**环境变量**，改完 `bash run_dodo_bridge.sh restart` 即可：
+| 想改什么 | 在哪改 | 例子 |
+|---|---|---|
+| 桥的 HTTP 端口（Operit 连的那个） | 服务器 env `LISTEN_PORT` | `LISTEN_PORT=6199` → Operit `configure` 里 `bridge_url=http://<服务器>:6199` |
+| NapCat WS 端口 | 服务器 env `NAPCAT_WS_URL` | `NAPCAT_WS_URL=ws://127.0.0.1:6199` |
+| NapCat WebUI 端口 | NapCat 自己的 `webui.json`（不归本桥管） | — |
