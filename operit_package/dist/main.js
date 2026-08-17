@@ -257,7 +257,7 @@ async function resolveChatId(item) {
     }
     return resolveAutoChat(item, key);
   }
-  // 私聊：主人 → privateOwnerChatId（环境变量）；其他人 → C2C 自动建对话（2026-08-17 初尘需求）
+  // 私聊：主人 → privateOwnerChatId（环境变量）；其他人 → C2C 自动建对话（2026-08-17 用户需求）
   if (item.is_owner && cfg.privateOwnerChatId) {
     const ok = await findChatById(cfg.privateOwnerChatId);
     if (ok) return { chatId: cfg.privateOwnerChatId, key: key, title: "QQ私聊（主人）" };

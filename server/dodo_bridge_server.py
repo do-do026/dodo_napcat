@@ -91,8 +91,8 @@ DEFAULT_REPLY_CONFIG = {
     "at_context_before_sec": _env_int("NAPCAT_AT_CONTEXT_BEFORE_SEC", 10),     # time 模式：艾特前秒数
     "at_context_after_sec": _env_int("NAPCAT_AT_CONTEXT_AFTER_SEC", 10),      # time 模式：艾特后秒数
     "at_context_count": _env_int("NAPCAT_AT_CONTEXT_COUNT", 10),          # count 模式：上下文条数
-    # P3（2026-08-16）：G7 成员别名映射（需求18：QQ号→可读昵称，如 <QQ号>→苜蓿）
-    "known_users": {},               # {"<QQ号>": "苜蓿", ...}
+    # P3（2026-08-16）：G7 成员别名映射（需求18：QQ号→可读昵称，如 <QQ号>→用户别名）
+    "known_users": {},               # {"<QQ号>": "用户别名", ...}
     # P3（2026-08-16 23:56）：批量观察轮（需求19，用户需求）
     "aggregate_scope": os.environ.get("NAPCAT_AGGREGATE_SCOPE", "trigger"),    # trigger=只聚合艾特/关键词触发消息（5秒防抖）；all=聚合所有群消息（20秒批量观察，AI选择回复/ignore全部）
     "repeat_flood_detect": _env_bool("NAPCAT_REPEAT_FLOOD_DETECT", True),     # 复读检测：窗口内消息文本归一化后高度重复 → 标记复读，AI只主动回一次不逐条引用

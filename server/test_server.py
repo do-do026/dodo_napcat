@@ -132,7 +132,7 @@ def test_prompt():
     print("[6] format_prompt")
     reset()
     item = {"id": "abc", "message_type": "group", "user_id": 111, "group_id": 2,
-            "nickname": "初尘", "text": "hello", "messages": ["hello"], "message_count": 1,
+            "nickname": "用户", "text": "hello", "messages": ["hello"], "message_count": 1,
             "selection_required": False, "context": [], "following_context": []}
     prompt = srv.format_prompt(item)
     check("prompt 含会话标识", "QQ群 2" in prompt)
@@ -243,8 +243,8 @@ def test_p3_known_users():
     print("[11] P3 G7 成员别名映射（known_users）")
     reset()
     srv.reply_config = dict(srv.DEFAULT_REPLY_CONFIG)
-    srv.reply_config["known_users"] = {"666666666": "苜蓿", "111": "小明"}
-    check("别名优先", srv.display_name(666666666, "群名片") == "苜蓿")
+    srv.reply_config["known_users"] = {"666666666": "用户别名", "111": "小明"}
+    check("别名优先", srv.display_name(666666666, "群名片") == "用户别名")
     check("无别名回退群名片", srv.display_name(222, "群名片") == "群名片")
     check("都无回退QQ号", srv.display_name(333, "") == "333")
     # normalize 兼容 dict / json字符串
@@ -256,7 +256,7 @@ def test_p3_known_users():
             "nickname": "群名片", "text": "在吗", "messages": ["在吗"], "qq_message_id": "q1",
             "qq_message_ids": ["q1"], "context": [], "selection_required": False, "trigger": "owner"}
     p = srv.format_prompt(item)
-    check("prompt 用别名", "苜蓿" in p)
+    check("prompt 用别名", "用户别名" in p)
 
 
 def test_p3_observe_window():
