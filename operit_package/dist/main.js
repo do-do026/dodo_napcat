@@ -3,9 +3,9 @@
  *
  * P2：连接远端桥服务器（dodo_bridge_server），轮询 /api/pull → 调 Operit AI → /api/reply。
  * 设计对齐：
- *  - 服务器负责 收消息/队列/预过滤(at_only)/分段/原生引用/stale清理（需求13/14/15）
+ *  - 服务器负责 收消息/队列/预过滤(keyword_or_at)/分段/原生引用/stale清理（需求13/14/15）
  *  - 本包负责 轮询消费 / 对话绑定(fixed|auto，需求11) / AI 生成 / 选择性忽略
- *  - 默认 enabled=false（需求13：写完群功能后不自动开）
+ *  - 默认 enabled=false（需求13：写完群功能后不自动开）；群默认 keyword_or_at（回艾特+关键词，需求14 2026-08-17 更新）
  *  - 配置走 schema + NAPCAT_* env（需求：不硬编码，参数可调）
  */
 
@@ -21,10 +21,12 @@ const DEFAULTS = {
   bridgeToken: "",
   pollIntervalMs: 3000,              // 3000~60000
   pullCount: 3,                      // 1~10，批量领取（BUG-02）
-  chatBindingMode: "fixed",          // fixed=绑 fixedChatId / auto=按 group:gid·private:uid 自动开对话（需求11）
+  chatBindingMode: "fixed",          // fixed=群绑 fixedChatId / auto=群按 group 自动开对话（需求11）
   fixedChatId: "",
   fixedChatTitle: "",
+  privateOwnerChatId: "",            // 主人私聊固定对话（环境变量 NAPCAT_PRIVATE_OWNER_CHAT_ID）；其他人私聊按 C2C 自动建对话（2026-08-17）
   characterCardName: "",
+  groupChatBindings: {},             // 需求（2026-08-17）：按群绑定对话 {群ID: chatId}，优先级高于 fixedChatId
   aiTimeoutMs: 120000,               // 10000~600000
   concurrency: 1,                    // P2 串行
 };
@@ -38,6 +40,7 @@ const ENV_MAP = {
   pullCount: "NAPCAT_PULL_COUNT",
   chatBindingMode: "NAPCAT_CHAT_BINDING_MODE",
   fixedChatId: "NAPCAT_FIXED_CHAT_ID",
+  privateOwnerChatId: "NAPCAT_PRIVATE_OWNER_CHAT_ID",
   characterCardName: "NAPCAT_CHARACTER_CARD",
   aiTimeoutMs: "NAPCAT_AI_TIMEOUT_MS",
 };
@@ -49,6 +52,22 @@ function clampInt(v, min, max, dft) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 function boolVal(v, dft) { return v === undefined ? dft : v === true || v === "true" || v === 1 || v === "1"; }
+
+// 需求（2026-08-17）：按群绑定对话 {群ID: chatId}，优先级高于 fixedChatId；兼容对象与 JSON 字符串
+function normalizeGroupBindings(v) {
+  const out = {};
+  let raw = v;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch (e) { raw = null; }
+  }
+  if (raw && typeof raw === "object") {
+    for (const [k, val] of Object.entries(raw)) {
+      const id = asText(val || "").trim();
+      if (id) out[asText(k).trim()] = id;
+    }
+  }
+  return out;
+}
 
 function envValue(key) {
   try {
@@ -72,7 +91,9 @@ function normalize(raw) {
     chatBindingMode: (mode === "auto") ? "auto" : "fixed",
     fixedChatId: asText(raw.fixedChatId || "").trim(),
     fixedChatTitle: asText(raw.fixedChatTitle || "").trim(),
+    privateOwnerChatId: asText(raw.privateOwnerChatId || "").trim(),
     characterCardName: asText(raw.characterCardName || "").trim(),
+    groupChatBindings: normalizeGroupBindings(raw.groupChatBindings || raw.group_chat_bindings),
     aiTimeoutMs: clampInt(raw.aiTimeoutMs, 10000, 600000, DEFAULTS.aiTimeoutMs),
     concurrency: 1,
   };
@@ -169,6 +190,7 @@ async function requeue(id) { try { await httpJson("/api/requeue", "POST", { id: 
 async function serverHealth() { return await httpJson("/health", "GET", null, 8000); }
 async function serverStats() { return await httpJson("/api/queue/stats", "GET", null, 8000); }
 async function serverConfig(patch) { return await httpJson("/api/config", "POST", patch || {}, 15000); }
+async function serverGetConfig() { return await httpJson("/api/config", "GET", null, 8000); }
 
 // ==================== 角色卡解析 ====================
 async function resolveCardId() {
@@ -189,17 +211,19 @@ function conversationTitle(item) {
   return item.message_type === "group" ? ("QQ群 " + item.group_id) : ("QQ私聊 " + item.user_id);
 }
 async function findChatById(chatId) {
-  const found = await Tools.Chat.findChat({ query: chatId, match: "exact", index: 0 });
-  return (found?.chat?.id || "") === chatId;
-}
-async function resolveChatId(item) {
-  const cfg = getConfig();
-  const key = conversationKey(item);
-  if (cfg.chatBindingMode === "fixed" && cfg.fixedChatId) {
-    const ok = await findChatById(cfg.fixedChatId);
-    if (!ok) throw new Error("固定绑定对话不存在: " + cfg.fixedChatId + "（请先 bind_chat / bind_current_chat）");
-    return { chatId: cfg.fixedChatId, key: key, title: cfg.fixedChatTitle || "QQ桥接" };
+  if (!chatId) return false;
+  // 用 listChats 遍历匹配（findChat 的 query 语义不确定，避免匹配不上 fallback 到建新对话）
+  try {
+    const result = await Tools.Chat.listChats({ limit: 500, sort_by: "updatedAt", sort_order: "desc" });
+    const data = result && typeof result === "object" && result.data && typeof result.data === "object" ? result.data : result;
+    const chats = Array.isArray(data?.chats) ? data.chats : [];
+    return chats.some((c) => asText(c?.id) === chatId);
+  } catch (e) {
+    console.warn("[napcat_pro] findChatById listChats error: " + String((e && e.message) || e));
+    return false;
   }
+}
+async function resolveAutoChat(item, key) {
   // auto：按 conversation_key 复用/新建 Operit 对话
   if (state.bindings[key]) {
     const ok = await findChatById(state.bindings[key]);
@@ -215,6 +239,32 @@ async function resolveChatId(item) {
   return { chatId: chatId, key: key, title: conversationTitle(item) };
 }
 
+async function resolveChatId(item) {
+  const cfg = getConfig();
+  const key = conversationKey(item);
+  // 群聊：按群绑定 > 固定渡渡对话（fixedChatId）> 按群 auto（需求11 / 2026-08-17 按群绑定）
+  if (item.message_type === "group") {
+    const gid = String(item.group_id || "");
+    const mapped = (cfg.groupChatBindings || {})[gid];
+    if (mapped) {
+      const ok = await findChatById(mapped);
+      if (ok) return { chatId: mapped, key: key, title: cfg.fixedChatTitle || ("QQ群 " + item.group_id) };
+    }
+    if (cfg.fixedChatId) {
+      const ok = await findChatById(cfg.fixedChatId);
+      if (ok) return { chatId: cfg.fixedChatId, key: key, title: cfg.fixedChatTitle || "QQ桥接" };
+      // 固定对话失效 → fallback auto
+    }
+    return resolveAutoChat(item, key);
+  }
+  // 私聊：主人 → privateOwnerChatId（环境变量）；其他人 → C2C 自动建对话（2026-08-17 初尘需求）
+  if (item.is_owner && cfg.privateOwnerChatId) {
+    const ok = await findChatById(cfg.privateOwnerChatId);
+    if (ok) return { chatId: cfg.privateOwnerChatId, key: key, title: "QQ私聊（主人）" };
+  }
+  return resolveAutoChat(item, key);
+}
+
 // ==================== AI 调用 ====================
 function stripModelMarkup(text) {
   let t = asText(text);
@@ -224,6 +274,26 @@ function stripModelMarkup(text) {
   t = t.replace(/<\/?(think|attachment|tool_\w+|tool_result_\w+)[^>]*>/gi, "");
   t = t.replace(/<[^>]+>/g, "");
   return t.trim();
+}
+
+// Service not connected（ChatService 间歇性断）时重试，防单次瞬断丢消息
+async function withChatRetry(fn, retries, delayMs) {
+  let lastError;
+  for (let attempt = 0; attempt <= (retries || 2); attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const msg = String(error?.message || error);
+      if (msg.indexOf("Service not connected") >= 0 && attempt < (retries || 2)) {
+        console.warn("[napcat_pro] ChatService 未连接，重试 " + (attempt + 1) + "/" + (retries || 2));
+        await Tools.System.sleep(delayMs || 1500);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 async function processOne() {
@@ -245,30 +315,71 @@ async function processOne() {
       const prompt = asText(item?.prompt || "").trim();
       if (!itemId || !prompt) { await requeue(itemId); continue; }
       state.lastMessageAt = Date.now();
-      const { chatId } = await resolveChatId(item);
-      const cardId = await resolveCardId();
-      const aiResult = await Tools.Chat.sendMessage(
-        prompt, chatId, cardId || undefined, "QQ桥接",
-        { persist_turn: true, notify_reply: false, hide_user_message: true, disable_warning: true, timeout_ms: cfg.aiTimeoutMs }
-      );
-      const cleaned = stripModelMarkup(aiResult?.aiResponse || aiResult?.data?.aiResponse || "");
-      if (cleaned === IGNORE_SENTINEL) {
+      // 细分定位：resolveCardId / resolveChatId / sendMessageStreaming 哪个报 Service not connected
+      let chatId = "";
+      try {
+        const r = await resolveChatId(item);
+        chatId = r.chatId;
+      } catch (error) {
+        const em = String(error?.message || error);
+        console.warn("[napcat_pro] FAIL resolveChatId(" + item.message_type + "," + item.user_id + "): " + em);
+        throw error;
+      }
+      let cardId;
+      try {
+        cardId = await resolveCardId();
+      } catch (error) {
+        const em = String(error?.message || error);
+        console.warn("[napcat_pro] FAIL resolveCardId: " + em);
+        throw error;
+      }
+      // 用 Tools.Chat.sendMessage + senderName（extended_chat/chat_with_agent 验证可用的路径）；
+      // sendMessageStreaming 也会触发 ensureServiceConnected，间歇性 Service not connected → withChatRetry 兜底
+      let aiResult;
+      try {
+        aiResult = await withChatRetry(() => Tools.Chat.sendMessage(
+          prompt, chatId, cardId || undefined, "渡渡",
+          {
+            persist_turn: true, notify_reply: false, hide_user_message: true, disable_warning: true,
+            timeout_ms: cfg.aiTimeoutMs
+          }
+        ), 2, 1500);
+      } catch (error) {
+        const em = String(error?.message || error);
+        console.warn("[napcat_pro] FAIL sendMessage(chat=" + chatId + "): " + em);
+        throw error;
+      }
+      const cleaned = stripModelMarkup(aiResult?.aiResponse || aiResult?.data?.aiResponse || aiResult?.content || aiResult?.message || "");
+      // 需求（2026-08-17）：ignore 使用范围由代码划界，不靠 prompt 嘴炮——
+      // 触发（群@/关键词/主人、私聊主人）必回，AI 无权忽略；只有选择性候选（selection_required 且非触发）才允许忽略
+      const forced = (item.message_type === "group" && (item.trigger === "at" || item.trigger === "keyword" || item.trigger === "owner")) ||
+                     (item.message_type === "private" && item.trigger === "owner");
+      const ignorePermitted = !!item.selection_required && !forced;
+      const isIgnored = cleaned === IGNORE_SENTINEL && ignorePermitted;
+      console.log("[napcat_pro] round " + (item.message_type || "") + " u" + (item.user_id || "") + " g" + (item.group_id || "") + " chat=" + chatId + " trig=" + (item.trigger || "") + " igPerm=" + ignorePermitted + " -> " + (isIgnored ? "IGNORED" : "REPLY"));
+      if (isIgnored) {
         await ignoreMsg(itemId, "ai_selective_ignore");
         state.ignoredCount += 1;
+        touchState();
         results.push({ id: itemId, ignored: true });
         continue;
       }
-      const replyText = cleaned || "我在。";
+      // 触发必回：AI 就算输出哨兵也被代码拦下，兜底回复，不漏回
+      const replyText = (cleaned && cleaned !== IGNORE_SENTINEL) ? cleaned : "我在。";
       await reply(itemId, replyText);
       state.processedCount += 1;
+      state.lastReplyAt = Date.now();
+      touchState();
       results.push({ id: itemId, replied: replyText.slice(0, 60) });
     }
     state.lastError = "";
     return { ok: true, hasMessage: results.length > 0, results: results };
   } catch (error) {
     const msg = String(error?.message || error);
+    console.warn("[napcat_pro] processOne error: " + msg);
     state.lastError = msg;
     state.failedCount += 1;
+    touchState();
     if (itemId) await requeue(itemId);
     return { ok: false, error: msg, id: itemId || "" };
   } finally {
@@ -320,6 +431,8 @@ function publicConfig() {
     chatBindingMode: c.chatBindingMode,
     fixedChatId: c.fixedChatId,
     fixedChatTitle: c.fixedChatTitle,
+    privateOwnerChatId: c.privateOwnerChatId,
+    groupChatBindings: c.groupChatBindings || {},
     characterCardName: c.characterCardName,
     aiTimeoutMs: c.aiTimeoutMs,
   };
@@ -351,7 +464,9 @@ async function handleConfigure(payload) {
     pullCount: payload.pull_count !== undefined ? Number(payload.pull_count) : prev.pullCount,
     chatBindingMode: payload.chat_binding_mode !== undefined ? asText(payload.chat_binding_mode).trim() : prev.chatBindingMode,
     fixedChatId: payload.fixed_chat_id !== undefined ? asText(payload.fixed_chat_id).trim() : prev.fixedChatId,
+    privateOwnerChatId: payload.private_owner_chat_id !== undefined ? asText(payload.private_owner_chat_id).trim() : prev.privateOwnerChatId,
     characterCardName: payload.character_card_name !== undefined ? asText(payload.character_card_name).trim() : prev.characterCardName,
+    groupChatBindings: payload.group_chat_bindings !== undefined ? normalizeGroupBindings(payload.group_chat_bindings) : prev.groupChatBindings,
     aiTimeoutMs: payload.ai_timeout_ms !== undefined ? Number(payload.ai_timeout_ms) : prev.aiTimeoutMs,
   });
   return { success: true, config: publicConfig() };
@@ -362,13 +477,21 @@ async function handleStart(payload) {
   const cfg = getConfig();
   if (!cfg.bridgeUrl) throw new Error("未配置服务器地址（bridge_url）");
   if (!cfg.bridgeToken) throw new Error("未配置 Bridge Token");
+  // 对齐文档：fixed 模式须已绑定有效对话
+  if (cfg.chatBindingMode === "fixed") {
+    if (!cfg.fixedChatId) throw new Error("fixed 模式尚未绑定对话（请先 bind_current_chat 或 configure 固定对话ID）");
+    const ok = await findChatById(cfg.fixedChatId);
+    if (!ok) throw new Error("fixed 模式绑定的对话不存在或不可用: " + cfg.fixedChatId);
+  }
   // 验证服务器连通
   const health = await serverHealth();
   if (!health || health.ok !== true) throw new Error("服务器不可达或鉴权失败");
-  // fixed 模式必须已绑定
-  if (cfg.chatBindingMode === "fixed" && !cfg.fixedChatId) throw new Error("fixed 模式尚未绑定对话（请先 bind_chat / bind_current_chat）");
-  // 同步回复规则到服务器（群模式默认 at_only，需求14）
-  try { await serverConfig({ group_reply_mode: "at_only" }); } catch (e) { /* 服务器可自行管理 */ }
+  // 同步默认群模式 keyword_or_at（需求14，2026-08-17）：仅在服务器当前模式为 off/未配置时写入，不覆盖 UI 已设的模式
+  try {
+    const remote = await serverGetConfig();
+    const cur = (remote && remote.config && remote.config.group_reply_mode) || "";
+    if (!cur || cur === "off") await serverConfig({ group_reply_mode: "keyword_or_at" });
+  } catch (e) { /* 服务器可自行管理 */ }
   const started = startLoop();
   return { success: true, started: started, health: { ws_connected: !!health.ws_connected, bot_qq: health.bot_qq } };
 }
@@ -381,10 +504,11 @@ async function handleStop() {
 }
 
 async function handleStatus() {
-  let health = null, stats = null;
+  let health = null, stats = null, rules = null;
   try { health = await serverHealth(); } catch (e) { health = { ok: false, error: "服务器不可达" }; }
   try { stats = await serverStats(); } catch (e) { stats = null; }
-  return { success: true, config: publicConfig(), state: publicState(), server: health, queue: stats };
+  try { const r = await serverGetConfig(); rules = (r && r.config) || null; } catch (e) { rules = null; }
+  return { success: true, config: publicConfig(), state: publicState(), server: health, queue: stats, server_rules: rules };
 }
 
 async function handleRunOnce() {
@@ -487,12 +611,19 @@ function autoStartIfEnabled() {
 
 function registerToolPkg() {
   registerIpc();
-  // 重启自动恢复：application_on_create 时若 enabled=true 自动拉起轮询
+  // 重启自动恢复：application_on_create / foreground 时若 enabled=true 自动拉起轮询
+  // NOTE(T029同款)：registerAppLifecycleHook 的 function 必须「从 toolpkg 模块导出」，
+  // 不能是内部闭包函数——否则宿主拒绝注册（registerAppLifecycleHook function must be exported from a toolpkg module）。
   try {
     ToolPkg.registerAppLifecycleHook({
       id: "napcat_pro_auto_start",
       event: "application_on_create",
-      function: autoStartIfEnabled
+      function: exports.autoStartIfEnabled
+    });
+    ToolPkg.registerAppLifecycleHook({
+      id: "napcat_pro_auto_start_fg",
+      event: "application_on_foreground",
+      function: exports.autoStartIfEnabled
     });
   } catch (e) {
     console.warn("[napcat_pro] lifecycle hook registration skipped: " + String((e && e.message) || e));
@@ -530,7 +661,9 @@ function registerToolPkg() {
 loadState();
 loadConfig();
 registerIpc();
+console.log("[napcat_pro] module loaded, enabled=" + String(getConfig().enabled) + ", bridgeUrl=" + (getConfig().bridgeUrl ? "set" : "empty"));
 
 exports.onApplicationCreate = onApplicationCreate;
 exports.registerToolPkg = registerToolPkg;
+exports.autoStartIfEnabled = autoStartIfEnabled;
 exports.IPC_CHANNEL = IPC_CHANNEL;

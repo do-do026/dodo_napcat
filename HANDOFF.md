@@ -20,7 +20,7 @@
 Operit（一加手机）
 └─ ToolPkg com.operit.napcat_pro（dev_package/ 开发，已烧录）
    └─ 配置 /sdcard/Download/Operit/plugins/com.operit.napcat_pro/config.json
-      （当前绑定：fixedChatId=2f928270-e930-4752-834d-e14485a44a87「初尘&渡渡·第三次桥接」，角色卡渡渡，enabled=false）
+      （当前绑定：fixedChatId=b547763e「渡渡&初尘」，groupChatBindings{<群ID>: b547763e}，主人私聊 f128b2c7，角色卡渡渡，enabled=true）
 ```
 
 ## 2. 关键命令/路径

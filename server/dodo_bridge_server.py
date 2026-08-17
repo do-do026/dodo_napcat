@@ -64,13 +64,16 @@ def _env_bool(name, dft):
     return str(v).strip().lower() in ("1", "true", "yes", "on")
 
 
+KEEP_NEWEST_STALE = _env_bool("NAPCAT_KEEP_NEWEST_STALE", True)   # 需求（2026-08-17）：每会话保留最近一条未处理，避免断连后最新回复消息也被丢光
+
+
 GROUP_MODES = {"off", "at_only", "keyword_or_at", "selective", "all"}
 PRIVATE_MODES = {"off", "owner_only", "whitelist", "keyword", "all"}
 
 DEFAULT_REPLY_CONFIG = {
     "owner_qq": _env_int("NAPCAT_OWNER_QQ", 0),
     "owner_always_reply": _env_bool("NAPCAT_OWNER_ALWAYS_REPLY", True),
-    "group_reply_mode": os.environ.get("NAPCAT_GROUP_REPLY_MODE", "at_only"),   # 需求（2026-08-16）：默认仅回复艾特，群里消息多防刷屏
+    "group_reply_mode": os.environ.get("NAPCAT_GROUP_REPLY_MODE", "keyword_or_at"),   # 需求（2026-08-17）：默认回艾特+关键词（关键词可 UI 调），不再承诺仅回艾特
     "keywords": [],
     "private_reply_mode": os.environ.get("NAPCAT_PRIVATE_REPLY_MODE", "owner_only"),
     "private_whitelist": [],
@@ -97,6 +100,9 @@ DEFAULT_REPLY_CONFIG = {
     "private_chunk_size": _env_int("NAPCAT_PRIVATE_CHUNK_SIZE", 3),       # 私聊：每3句一条
     "group_chunk_size": _env_int("NAPCAT_GROUP_CHUNK_SIZE", 5),         # 群聊：每5句一条
     "reply_chunk_max_chars": _env_int("NAPCAT_CHUNK_MAX_CHARS", 400),    # 无句末符文本的字符安全兜底（G4）
+    # 需求（2026-08-17）：群即时触发（@/关键词）也要带上下文（AI 需知道在聊什么）+ 必须回复；
+    # 0=按标准 at_context_count（10），<0=显式关闭上下文，>0=N 条；批量观察(scope=all)始终带上下文
+    "group_immediate_context": _env_int("NAPCAT_GROUP_IMMEDIATE_CONTEXT", 0),
 }
 
 # ==================== 全局状态 ====================
@@ -216,6 +222,7 @@ def normalize_config(value):
         "private_chunk_size": max(1, min(20, int(raw.get("private_chunk_size", 3) or 0))),
         "group_chunk_size": max(1, min(20, int(raw.get("group_chunk_size", 5) or 0))),
         "reply_chunk_max_chars": max(1, min(2000, int(raw.get("reply_chunk_max_chars", 400) or 0))),
+        "group_immediate_context": max(-1, min(50, int(raw.get("group_immediate_context", 0) or 0))),
     }
 
 
@@ -332,21 +339,28 @@ def _flush_group_bucket(key):
 
         # G2 双模式上下文：窗口 = [first_ts - before, last_ts + after]
         trigger_ts = first_ts
-        if reply_config["at_context_mode"] == "time":
+        # 需求（2026-08-17）：触发（@/关键词/主人）也要带上下文（AI 需知道在聊什么）；仅 group_immediate_context<0 显式关闭
+        if reply_config["group_immediate_context"] < 0:
+            recent_context = []
+        elif reply_config["at_context_mode"] == "time":
             lo = first_ts - reply_config["at_context_before_sec"]
             hi = last_ts + reply_config["at_context_after_sec"]
             recent_context = [dict(x) for x in context_history.get(key, [])
                               if int(x.get("created_at") or 0) >= lo and int(x.get("created_at") or 0) <= hi]
         else:
-            n = reply_config["at_context_count"]
+            n = reply_config["group_immediate_context"] if reply_config["group_immediate_context"] > 0 else reply_config["at_context_count"]
             recent_context = [dict(x) for x in context_history.get(key, [])][-n:] if n > 0 else []
 
         owner = bool(reply_config["owner_qq"] and events[0].get("user_id") == reply_config["owner_qq"])
         first_ev = events[0]
         # 需求19：复读检测（代码给事实）——复读轮 AI 只主动回一次，不逐条引用
         repeat_flood = detect_repeat_flood(events)
-        # 批量观察轮：AI 从候选中选择回复哪些（replyTo编号）或全部忽略
-        selection_required = True
+        # 批量观察轮（scope=all）：AI 从候选中选择回复哪些（replyTo编号）或全部忽略
+        # trigger 聚合（@/关键词主动召唤）：必回（selection_required=False），AI 不能忽略
+        # 需求（2026-08-17）：ignore 范围由代码划界——只有批量观察里「非触发」普通群消息可选忽略；
+        # @/关键词/主人触发无论 scope 都必回（selection_required=False，Operit 侧据此拦下 ignore）
+        trig_forced = first_ev.get("trigger") in ("at", "keyword", "owner")
+        selection_required = (reply_config.get("aggregate_scope") == "all") and not trig_forced
         trigger = first_ev.get("trigger") or "all"
         # 复读时默认不自动引用（AI 未显式指定 [replyTo:N] 时）
         suppress_quote = repeat_flood
@@ -490,7 +504,9 @@ def route_message(message_type, user_id, text, at_bot):
     - selection_required=True → AI 需判断是否回复（selective 候选）
     """
     owner = bool(reply_config["owner_qq"] and user_id == reply_config["owner_qq"])
-    if owner and reply_config["owner_always_reply"]:
+    # 需求（2026-08-17）：owner_always_reply 只保证「私聊」必回；群聊跟群模式走（仅艾特/关键词触发），
+    # 避免主人每句群聊都被强制送进 AI 却几乎全被忽略（实测 AI 全回 [[QQ_BRIDGE_IGNORE]]）
+    if owner and reply_config["owner_always_reply"] and message_type != "group":
         return True, False, "owner"
     hit = keyword_hit(text)
     if message_type == "group":
@@ -504,10 +520,12 @@ def route_message(message_type, user_id, text, at_bot):
         if mode == "all":
             return True, False, "all"
         if mode == "selective":
-            # 【BUG-01 修复】只有 owner/@/关键词 才成为 AI 候选；
-            # 其余群消息不排队，只作上下文/后续语境。
-            if at_bot or hit:
-                return True, True, "at" if at_bot else "keyword"
+            # 【BUG-01 修复】只有 @/关键词 才成为 AI 候选；其余群消息不排队，只作上下文/后续语境。
+            # 需求（2026-08-17）：selective 模式下艾特必回（selection_required=False），关键词为可选候选（True）
+            if at_bot:
+                return True, False, "at"
+            if hit:
+                return True, True, "keyword"
             return False, False, "context_only"
     else:
         mode = reply_config["private_reply_mode"]
@@ -602,8 +620,14 @@ def enqueue_message(data):
         is_continuation = bool(merge_item and prior_last_user == user_id)
 
         # 群友 @/关键词 触发取专用前文窗口；其他沿用普通群窗口（G2 双模式）
-        if msg_type == "group" and not owner and trigger in ("at", "keyword"):
-            recent_context = snapshot_context(key, now, trigger, limit_hint=reply_config["mention_context_limit"])
+        # 需求（2026-08-17）：触发也要带上下文（AI 需知道在聊什么）；仅 group_immediate_context<0 显式关闭
+        if msg_type == "group":
+            if reply_config["group_immediate_context"] < 0:
+                recent_context = []
+            elif not owner and trigger in ("at", "keyword"):
+                recent_context = snapshot_context(key, now, trigger, limit_hint=reply_config["group_immediate_context"] if reply_config["group_immediate_context"] > 0 else reply_config["mention_context_limit"])
+            else:
+                recent_context = snapshot_context(key, now, trigger)
         else:
             recent_context = snapshot_context(key, now, trigger)
 
@@ -759,24 +783,41 @@ def clean_stale_queue():
     """需求（2026-08-16）：开启/轮询时丢弃 5 分钟（STALE_MSG_TTL_SECONDS）以前的内容。
 
     只清理 pending（未处理）的过期项；已 done/ignored/skipped 保留作审计。
+    需求（2026-08-17）：每个会话（群/私聊）保留「最近一条未处理」的 pending，
+    避免长时间断连后把最新一条回复消息也丢光；该条在领取时会补拉最近 10 条上下文。
     """
     if STALE_MSG_TTL_SECONDS <= 0:
         return 0
     cut = int(time.time()) - STALE_MSG_TTL_SECONDS
     removed = 0
     with _lock:
+        # 先找出每会话最近一条 pending（用于 stale 保留）
+        newest_pending = {}
+        for item in queue:
+            if item.get("status") != "pending":
+                continue
+            key = item.get("conversation_key") or ""
+            cur = newest_pending.get(key)
+            if cur is None or int(item.get("created_at") or 0) > int(cur.get("created_at") or 0):
+                newest_pending[key] = item
         keep = []
         for item in queue:
             ts = int(item.get("created_at") or 0)
             # 只丢「确知年龄 > TTL」的 pending；created_at<=0（未知年龄/旧格式）不误删
             if item.get("status") == "pending" and ts > 0 and ts < cut:
+                key = item.get("conversation_key") or ""
+                # 需求（2026-08-17）：每会话保留最近一条未处理，领取时补拉上下文
+                if KEEP_NEWEST_STALE and newest_pending.get(key) is item:
+                    item["stale_kept"] = True
+                    keep.append(item)
+                    continue
                 removed += 1
                 continue
             keep.append(item)
         if removed:
             queue[:] = keep
             save_queue()
-            log(f"dropped {removed} stale messages (older than {STALE_MSG_TTL_SECONDS}s)")
+            log(f"dropped {removed} stale messages (older than {STALE_MSG_TTL_SECONDS}s); kept newest pending per conversation")
     return removed
 
 
@@ -803,6 +844,11 @@ def claim_next(count=1):
             if int(item.get("ready_at") or 0) > now:
                 continue
             item["status"], item["claimed_at"] = "claimed", now
+            # 需求（2026-08-17）：stale 保留的最近一条，领取时补拉最近 10 条上下文（避免断连恢复后 AI 缺语境）
+            if item.get("stale_kept"):
+                key = item.get("conversation_key") or ""
+                item["context"] = snapshot_context(key, now, str(item.get("trigger") or ""), limit_hint=10)
+                item.pop("stale_kept", None)
             claimed.append(item)
         if claimed or changed:
             save_queue()
@@ -842,6 +888,8 @@ def format_prompt(item):
             + "\n【后续语境结束】"
         )
     selection = ""
+    # 需求（2026-08-17）：ignore 使用范围由 selection_required 代码划界（见 _flush_group_bucket / route_message），
+    # prompt 保持简洁——只有允许忽略的选择性候选才给哨兵说明，触发轮根本不提忽略
     if item.get("selection_required"):
         selection = (
             "这是一条选择性回复候选。请结合上下文判断是否自然、有必要插话。"
@@ -1088,8 +1136,10 @@ class Handler(BaseHTTPRequestHandler):
                     "private_chunk_size": reply_config["private_chunk_size"],
                     "group_chunk_size": reply_config["group_chunk_size"],
                     "reply_chunk_max_chars": reply_config["reply_chunk_max_chars"],
+                    "group_immediate_context": reply_config["group_immediate_context"],
                     "pull_max_count": PULL_MAX_COUNT,
                     "rate_limit_per_min": RATE_LIMIT_PER_MIN,
+                    "keep_newest_stale": KEEP_NEWEST_STALE,
                 },
             })
         if not self.auth_ok():
@@ -1113,6 +1163,8 @@ class Handler(BaseHTTPRequestHandler):
                     "id": x["id"], "message_type": x["message_type"], "user_id": x["user_id"],
                     "group_id": x["group_id"], "created_at": int(x.get("created_at") or 0),
                     "selection_required": x.get("selection_required") is True,
+                    "is_owner": x.get("is_owner") is True,
+                    "trigger": str(x.get("trigger") or ""),
                     "prompt": format_prompt(x),
                 } for x in items],
             })

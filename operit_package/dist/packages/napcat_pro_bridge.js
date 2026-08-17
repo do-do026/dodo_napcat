@@ -4,7 +4,7 @@
   "name": "napcat_pro_bridge",
   "display_name": {"zh": "渡渡 NapCat 桥", "en": "Dodo NapCat Bridge"},
   "description": {
-    "zh": "NapCat → Operit → QQ 桥（P2 消费端）：配置服务器连接、绑定 Operit 对话（fixed/auto）、开启轮询消费、AI 自动回复、选择性忽略。默认不自动开；群模式默认仅回艾特（at_only）。",
+    "zh": "NapCat → Operit → QQ 桥（P2 消费端）：配置服务器连接、绑定 Operit 对话（fixed/auto）、开启轮询消费、AI 自动回复、选择性忽略。默认不自动开；群模式默认回艾特+关键词（keyword_or_at，可在 UI 调）。",
     "en": "Configure, bind and control the NapCat to Operit to QQ bridge consumer."
   },
   "enabledByDefault": false,
@@ -36,7 +36,7 @@
       {"name":"chat_title","type":"string","required":false,"description":"可选标题"},
       {"name":"character_card_name","type":"string","required":false,"description":"可选角色卡名称"}
     ]},
-    {"name":"start","description":{"zh":"开启桥接轮询。开启前验证服务器连通与对话绑定（fixed 模式须已绑定），并同步群模式 at_only 到服务器。","en":"Start the bridge polling loop."},"parameters":[]},
+    {"name":"start","description":{"zh":"开启桥接轮询。开启前验证服务器连通与对话绑定（fixed 模式须已绑定）；仅在服务器群模式未设置时同步默认 keyword_or_at（不覆盖 UI 已设模式）。","en":"Start the bridge polling loop."},"parameters":[]},
     {"name":"stop","description":{"zh":"关闭桥接轮询。","en":"Stop the bridge."},"parameters":[]},
     {"name":"status","description":{"zh":"查看桥接状态：配置（Token不返回原文）、处理计数、最近错误、服务器健康与队列。","en":"View bridge status."},"parameters":[]},
     {"name":"run_once","description":{"zh":"立即处理一批待回复消息（调试用）。","en":"Process messages once."},"parameters":[]},

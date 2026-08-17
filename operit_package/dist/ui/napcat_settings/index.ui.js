@@ -48,7 +48,7 @@ function Screen(ctx) {
   const bindingModeState = useStateValue(ctx, "bindingMode", "fixed");
   const fixedChatIdState = useStateValue(ctx, "fixedChatId", "");
   const characterCardState = useStateValue(ctx, "characterCard", "");
-  const groupModeState = useStateValue(ctx, "groupMode", "at_only");
+  const groupModeState = useStateValue(ctx, "groupMode", "keyword_or_at");
   const keywordsState = useStateValue(ctx, "keywords", "");
   const busyState = useStateValue(ctx, "busy", "");
   const messageState = useStateValue(ctx, "message", "");
@@ -83,6 +83,11 @@ function Screen(ctx) {
       bindingModeState.set(asText(cfg.chatBindingMode || "fixed"));
       fixedChatIdState.set(asText(cfg.fixedChatId || ""));
       characterCardState.set(asText(cfg.characterCardName || ""));
+      // 从服务器回读群模式/关键词（status 返回 server_rules）
+      const rules = data.server_rules || {};
+      if (rules.group_reply_mode) groupModeState.set(asText(rules.group_reply_mode));
+      if (Array.isArray(rules.keywords)) keywordsState.set(rules.keywords.join(", "));
+      else if (rules.keywords) keywordsState.set(asText(rules.keywords));
     } catch (e) {
       setMessage("刷新失败：" + toErrorText(e));
     } finally {
