@@ -50,6 +50,8 @@ function Screen(ctx) {
   const characterCardState = useStateValue(ctx, "characterCard", "");
   const groupModeState = useStateValue(ctx, "groupMode", "keyword_or_at");
   const keywordsState = useStateValue(ctx, "keywords", "");
+  const botNameState = useStateValue(ctx, "botName", "");
+  const bridgePromptState = useStateValue(ctx, "bridgePrompt", "");
   const busyState = useStateValue(ctx, "busy", "");
   const messageState = useStateValue(ctx, "message", "");
 
@@ -88,6 +90,8 @@ function Screen(ctx) {
       if (rules.group_reply_mode) groupModeState.set(asText(rules.group_reply_mode));
       if (Array.isArray(rules.keywords)) keywordsState.set(rules.keywords.join(", "));
       else if (rules.keywords) keywordsState.set(asText(rules.keywords));
+      if (rules.bot_name) botNameState.set(asText(rules.bot_name));
+      if (rules.bridge_prompt) bridgePromptState.set(asText(rules.bridge_prompt));
     } catch (e) {
       setMessage("刷新失败：" + toErrorText(e));
     } finally {
@@ -123,7 +127,10 @@ function Screen(ctx) {
     busyState.set("rules");
     try {
       const keywords = keywordsState.value.split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean);
-      await callIpc("set_reply_rules", { group_reply_mode: groupModeState.value, keywords: keywords });
+      await callIpc("set_reply_rules", {
+        group_reply_mode: groupModeState.value, keywords: keywords,
+        bot_name: botNameState.value.trim(), bridge_prompt: bridgePromptState.value.trim()
+      });
       setMessage("回复规则已同步到服务器。");
     } catch (e) {
       setMessage("规则保存失败：" + toErrorText(e));
@@ -274,6 +281,8 @@ function Screen(ctx) {
           enabled: !isAnyBusy, fillMaxWidth: true, onClick: () => groupModeState.set(opt.value)
         }))),
         ctx.UI.TextField({ label: "触发关键词（逗号分隔）", value: keywordsState.value, onValueChange: keywordsState.set, singleLine: false }),
+        ctx.UI.TextField({ label: "AI 被称呼的名字 / QQ昵称（如 渡渡）", value: botNameState.value, onValueChange: botNameState.set, singleLine: true }),
+        ctx.UI.TextField({ label: "桥接提示词（留空=默认兜底）", value: bridgePromptState.value, onValueChange: bridgePromptState.set, singleLine: false }),
         ctx.UI.Button({ text: isBusy("rules") ? "保存中..." : "同步回复规则", enabled: !isAnyBusy, fillMaxWidth: true, onClick: async () => await saveRules() })
       ])
     ]),

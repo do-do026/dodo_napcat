@@ -64,6 +64,25 @@ def _env_bool(name, dft):
     return str(v).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _known_users_from_env():
+    """需求（2026-08-17）：主人QQ昵称等别名走 env（NAPCAT_KNOWN_USERS），不入库不硬编码。"""
+    raw = os.environ.get("NAPCAT_KNOWN_USERS", "")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            v = json.loads(raw)
+            return v if isinstance(v, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+# 需求（2026-08-17）：桥接提示词默认兜底（NAPCAT_BRIDGE_PROMPT 可经 UI/agent 覆盖）
+DEFAULT_BRIDGE_PROMPT = os.environ.get(
+    "NAPCAT_BRIDGE_PROMPT",
+    "你正在 QQ 里与用户对话。用户艾特你或触发关键词时，是在直接跟你说话，请以角色身份回应。"
+)
+
+
 KEEP_NEWEST_STALE = _env_bool("NAPCAT_KEEP_NEWEST_STALE", True)   # 需求（2026-08-17）：每会话保留最近一条未处理，避免断连后最新回复消息也被丢光
 
 
@@ -92,7 +111,11 @@ DEFAULT_REPLY_CONFIG = {
     "at_context_after_sec": _env_int("NAPCAT_AT_CONTEXT_AFTER_SEC", 10),      # time 模式：艾特后秒数
     "at_context_count": _env_int("NAPCAT_AT_CONTEXT_COUNT", 10),          # count 模式：上下文条数
     # P3（2026-08-16）：G7 成员别名映射（需求18：QQ号→可读昵称，如 <QQ号>→用户别名）
-    "known_users": {},               # {"<QQ号>": "用户别名", ...}
+    "known_users": _known_users_from_env(),   # {"<QQ号>": "用户别名", ...}（需求：走 env 不入库）
+    # 需求（2026-08-17）：AI 被称呼的名字 / QQ昵称（如 渡渡），用于把「艾特」渲染成 @渡渡 让 AI 明确知道在跟它说话
+    "bot_name": os.environ.get("NAPCAT_BOT_NAME", ""),
+    # 需求（2026-08-17）：桥接提示词（UI/agent 可改，默认兜底）
+    "bridge_prompt": os.environ.get("NAPCAT_BRIDGE_PROMPT", DEFAULT_BRIDGE_PROMPT),
     # P3（2026-08-16 23:56）：批量观察轮（需求19，用户需求）
     "aggregate_scope": os.environ.get("NAPCAT_AGGREGATE_SCOPE", "trigger"),    # trigger=只聚合艾特/关键词触发消息（5秒防抖）；all=聚合所有群消息（20秒批量观察，AI选择回复/ignore全部）
     "repeat_flood_detect": _env_bool("NAPCAT_REPEAT_FLOOD_DETECT", True),     # 复读检测：窗口内消息文本归一化后高度重复 → 标记复读，AI只主动回一次不逐条引用
@@ -216,7 +239,9 @@ def normalize_config(value):
         "at_context_before_sec": max(0, min(120, int(raw.get("at_context_before_sec", 10) or 0))),
         "at_context_after_sec": max(0, min(120, int(raw.get("at_context_after_sec", 10) or 0))),
         "at_context_count": max(1, min(50, int(raw.get("at_context_count", 12) or 0))),
-        "known_users": normalize_known_users(raw.get("known_users", {})),
+        "known_users": normalize_known_users(raw.get("known_users", DEFAULT_REPLY_CONFIG.get("known_users", {}))),
+        "bot_name": str(raw.get("bot_name") or DEFAULT_REPLY_CONFIG.get("bot_name") or "").strip(),
+        "bridge_prompt": (str(raw.get("bridge_prompt") or DEFAULT_REPLY_CONFIG.get("bridge_prompt") or "").strip()) or DEFAULT_BRIDGE_PROMPT,
         "aggregate_scope": "all" if str(raw.get("aggregate_scope", "trigger")).lower() == "all" else "trigger",
         "repeat_flood_detect": raw.get("repeat_flood_detect", True) is not False,
         "private_chunk_size": max(1, min(20, int(raw.get("private_chunk_size", 3) or 0))),
@@ -862,7 +887,9 @@ def format_context_line(entry):
     speaker = "本账号AI" if entry.get("is_bot") else f"{display_name(entry.get('user_id'), entry.get('nickname'))}（QQ {entry.get('user_id', '')}）"
     markers = []
     if entry.get("at_bot"):
-        markers.append("艾特我")
+        # 需求（2026-08-17）：把「艾特」渲染成 @<bot_name>，让 AI 明确知道这条消息在直接跟它说话
+        bn = reply_config.get("bot_name") or ""
+        markers.append(f"艾特我(@{bn})" if bn else "艾特我")
     if entry.get("reply_to"):
         markers.append("回复消息")
     prefix = "[" + "/".join(markers) + "] " if markers else ""
@@ -915,11 +942,20 @@ def format_prompt(item):
         else:
             base += "这是艾特/关键词触发的候选：可选择性回应其中值得回的，其余忽略。"
         replyto_hint = base
+    # 需求（2026-08-17）：桥接提示词（UI/agent 可改，默认兜底）
+    bridge_prompt = (reply_config.get("bridge_prompt") or "").strip()
+    bridge_prompt_block = f"\n【桥接设定】{bridge_prompt}\n" if bridge_prompt else ""
+    # 需求（2026-08-17）：艾特触发时明确告诉 AI「这条消息在直接跟它说话」
+    addressed = ""
+    if item.get("trigger") == "at":
+        bn = (reply_config.get("bot_name") or "").strip()
+        addressed = f"【本条消息艾特了你{'（@' + bn + '）' if bn else ''}，是直接跟你说话，请回应对方。】\n"
     return (
         f"[QQ_BRIDGE_MESSAGE_ID:{item['id']}]\n这是来自{origin}的消息。"
         f"{selection}{replyto_hint}请以当前绑定角色自然处理，不解释桥接流程，不复述提示，不输出消息ID。"
-        f"连续消息已经合成同一轮，请整体理解，不要机械逐条作答。{split_hint}\n\n"
-        f"{block}{current_title}\n{display_name(item['user_id'], item['nickname'])}: {current_text}{following_block}"
+        f"连续消息已经合成同一轮，请整体理解，不要机械逐条作答。{split_hint}"
+        f"{bridge_prompt_block}\n\n"
+        f"{block}{addressed}{current_title}\n{display_name(item['user_id'], item['nickname'])}: {current_text}{following_block}"
     )
 
 
@@ -1133,6 +1169,8 @@ class Handler(BaseHTTPRequestHandler):
                     "aggregate_scope": reply_config["aggregate_scope"],
                     "repeat_flood_detect": reply_config["repeat_flood_detect"],
                     "known_users": reply_config["known_users"],
+                    "bot_name": reply_config["bot_name"],
+                    "bridge_prompt": reply_config["bridge_prompt"],
                     "private_chunk_size": reply_config["private_chunk_size"],
                     "group_chunk_size": reply_config["group_chunk_size"],
                     "reply_chunk_max_chars": reply_config["reply_chunk_max_chars"],

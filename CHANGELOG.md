@@ -65,7 +65,8 @@
 - **"开了又断"根因确认**：04:10 日志 `application_on_create` + auto-start 拉起 → Operit 应用进程被系统回收/重启（03:20~04:10 约 50 分钟无拉取），消费端存活完全依赖 Operit 进程（T009 平台限制）；auto-start hook 生效时可自动恢复
 - **群聊"艾特全 ignore"根因确认（T016）**：读绑定对话 `2f928270` 实锤——①`owner_always_reply=true` 把主人**每句群聊**（非仅艾特）都强制送进 AI（队列全 `trig=owner`）；②AI 从历史学会输出 `[[QQ_BRIDGE_IGNORE]]`（一条思考原文："不涉及渡渡，不需要插话。忽略"）；③每条触发都带 10 行群聊上下文，AI 见群聊墙更倾向忽略。三者叠加=艾特不回
 - **修复（需求，04:30~04:55 定稿）**：①`owner_always_reply` 只保证私聊必回，群聊跟群模式走（仅艾特/关键词触发）；②群触发（@/关键词）**带上下文+必回**（`NAPCAT_GROUP_IMMEDIATE_CONTEXT=0`=标准10条，`<0`才关）；③**ignore 范围由代码划界**（selection_required 只在「选择性观察的非触发候选」为 True；触发无论 scope 必回），prompt 恢复简洁（不再"禁止这个禁止那个"）；④stale 保留的最近一条领取时补拉 10 条上下文
-- **按群绑定对话（需求，04:50）**：新增 `groupChatBindings {群ID: chatId}`（优先级>fixedChatId）；群 <群ID> → b547763e「渡渡&初尘」新对话；旧对话 2f928270 已删、fixedChatId 已更新；主人私聊仍走 f128b2c7
+- 按群绑定对话（需求，04:50）**：新增 `groupChatBindings {群ID: chatId}`（优先级>fixedChatId）；群 <群ID> → b547763e「渡渡&初尘」新对话；旧对话 2f928270 已删、fixedChatId 已更新；主人私聊仍走 f128b2c7
+- **env 化昵称/提示词（需求，19:2x）**：`NAPCAT_KNOWN_USERS`（主人QQ昵称等别名，走 env 不入库，代码真正读 env 兜底）、`NAPCAT_BOT_NAME`（AI被叫名字/QQ昵称，艾特渲染成 `@渡渡` 让 AI 明确知道在跟它说话，触发轮加"本条消息艾特了你"提示）、`NAPCAT_BRIDGE_PROMPT`（桥接提示词，UI/agent 可改，默认兜底"被触发=直接跟你说话请回应"）——三者均 env 默认 + config 可覆盖，UI 设置页已加对应输入框
 - 新 toolpkg 已重建（含 5 文件 19KB）至 packages 目录，**需重启 Operit 生效**
 
 ### 事故/教训

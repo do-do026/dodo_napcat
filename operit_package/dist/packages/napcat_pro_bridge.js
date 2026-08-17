@@ -52,7 +52,9 @@
       {"name":"debounce_seconds","type":"number","required":false,"description":"防抖秒数 0~30"},
       {"name":"split_reply_enabled","type":"boolean","required":false,"description":"按句号分条"},
       {"name":"reply_part_delay_ms","type":"number","required":false,"description":"分条间隔毫秒"},
-      {"name":"quote_reply_enabled","type":"boolean","required":false,"description":"回复原生引用原消息"}
+      {"name":"quote_reply_enabled","type":"boolean","required":false,"description":"回复原生引用原消息"},
+      {"name":"bot_name","type":"string","required":false,"description":"AI被称呼的名字/QQ昵称（如 渡渡），艾特渲染成 @渡渡"},
+      {"name":"bridge_prompt","type":"string","required":false,"description":"桥接提示词（留空用默认兜底）"}
     ]},
     {"name":"test_server","description":{"zh":"测试服务器连通与鉴权。","en":"Test server connectivity."},"parameters":[]}
   ]
