@@ -1,7 +1,19 @@
-# dodo_napcat — 渡渡的 NapCat QQ 桥（统一增强版）
+# dodo_napcat — NapCat → Operit → QQ 桥
 
-> 给「渡渡」做的干净 NapCat → Operit → QQ 桥。综合了 qqbot-pro（AI 编排）/ napcat_bridge_ui_market（语音/表情/QQ空间）/ qq_bridge_universal（规则矩阵/服务器桥）三家之长，干净重写。
+> 干净重写的 NapCat → Operit → QQ 自动回复桥：QQ/NapCat 消息 → 远端桥服务（队列/预过滤/上下文/分条/原生引用）→ Operit AI 自动回复。
 > 工程目录：`/sdcard/Download/dodo_napcat/` ｜ 包：`com.operit.napcat_pro`（显示名「渡渡 NapCat」）
+
+## 功能
+- 收群聊/私聊消息，@/关键词触发回复（群默认 `keyword_or_at`，关键词可在 UI 调）
+- **触发必回**：@/关键词/主人触发带上下文+必回，AI 无权忽略（ignore 范围由代码划界，非靠 prompt 嘴炮）
+- 原生引用回复（reply 段）、按句号分条（waifu chunker）、聚合窗口合并、复读检测
+- 选择性观察轮（scope=all）：AI 在非触发候选上可自行选择回复/忽略
+- 对话绑定：按群绑定（groupChatBindings）> 固定对话（fixedChatId）> 自动开对话；主人私聊独立对话
+- stale 清理：每会话保留最近一条未处理，领取时补拉最近上下文
+- env 化配置：`NAPCAT_BOT_NAME`（艾特渲染成 @名字）、`NAPCAT_KNOWN_USERS`（昵称映射）、`NAPCAT_BRIDGE_PROMPT`（提示词，UI/agent 可改，默认兜底）、回复规则全套
+- 服务器守护：watchdog 保活 + 登录守卫 + 周期重登；子包 `napcat_pro_server`（守护/重登/二维码拉取）
+- Operit 每轮处理日志 `[napcat_pro] round ... -> IGNORED/REPLY`（可观测）
+- **待做（未在本版本）**：语音 / 表情包 / QQ空间 / 撤回 / 图片 → 见 `STATUS.md` §4 / `IDEAS.md`
 
 ## 结构
 ```
