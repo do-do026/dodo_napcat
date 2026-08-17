@@ -13,11 +13,10 @@
 - **安全**：上 TLS 前先腾讯云防火墙收紧 8080 源 IP；长期考虑 CF Tunnel。
 
 ## 待办（next actions）
-- [ ] 受控测试 P2 消费端 + 群 at_only 闭环（先问初尘：对话/群/开关）
-- [ ] 推 GitHub 仓库（do-do026 下，REST API 上传，勿 git push——smart HTTP 被墙）
-- [ ] P3 续：G3 replyTo + G7 成员映射 + Operit 侧配合
-- [ ] P4 附加层：语音 / 表情包 / QQ空间 / 撤回 / @ / 输入态 / 图片
-- [ ] P5：UI 两套 + README/ARCHITECTURE/STATUS/HANDOFF 终稿 + GitHub Release
+- [x] 受控测试 P2 消费端（@必回 / ignore 划界 / 按群绑定）——已完成
+- [x] 推 GitHub 仓库（do-do026/dodo_napcat，REST API 上传，勿 git push——smart HTTP 被墙）
+- [ ] P4 附加层：语音 / 表情包 / QQ空间 / 撤回 / 输入态 / 图片
+- [ ] P5：UI（WebView）+ 安全（TLS / 8080 源IP收紧）+ config自愈
 - [ ] 安全：防火墙收紧 8080（出口 IP 111.60.84.160）+ TLS
 - [ ] Tailscale 恢复评估（当前禁用无害；要走内网再启用 magisk-tailscaled）
 - [ ] 旧包清理：napcat_bridge_ui_market / qq_bridge_universal 确认退役（已停，未删）

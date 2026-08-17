@@ -32,16 +32,19 @@ QQ群/私聊 → NapCat(服务器,ws6098) → dodo_bridge_server.py(服务器,0.
          └── Operit ToolPkg(com.operit.napcat_pro)：sendMessage(AI) → /api/reply
 ```
 ### 2.2 已实现
-- 服务器：队列状态机、触发矩阵、selective 预过滤、批量/队列管理/限流/stale、分条+原生引用、**G1 聚合桶（默认关）**、**G2 双模式**、/health、token 鉴权
-- Operit：Transport(pull/reply/ignore/requeue/config)、配置 schema+env、fixed/auto 绑定、轮询循环、AI 调用、选择性忽略哨兵、IPC 顶层注册
+- 服务器：队列状态机、触发矩阵、selective 预过滤、批量/队列管理/限流、stale（每会话保留最近一条 + 领取补上下文）、分条+原生引用、**G1 群聚合桶（当前开 5000ms）**、G2 上下文双模式（count/time）、G3 replyTo 协议头、G7 成员别名映射（known_users，env 化）、@/关键词触发必回（ignore 范围由 selection_required 代码划界）、NAPCAT_BOT_NAME 艾特渲染、NAPCAT_BRIDGE_PROMPT 提示词（env+config 可改）、/health、token 鉴权
+- 服务器守护：`dodo_bridge_watchdog.sh`（保活 + 登录守卫 + 周期重登，cron 每10分钟 + 周一04:30）
+- Operit：Transport(pull/reply/ignore/requeue/config)、配置 schema+env、fixed/auto/**按群绑定**(groupChatBindings)、轮询循环、AI 调用(withChatRetry)、ignore 代码划界兜底回复、IPC 顶层注册、每轮处理日志
+- 子包：`napcat_pro_bridge`（9 工具）+ `napcat_pro_server`（守护/重登/二维码，6 工具）
+
 ### 2.3 未实现（蓝图 vs 现状差异）
 | 蓝图 | 现状 |
 |---|---|
-| G3 replyTo 协议头 | 🔴 未做（聚合文本已带 `[#N]` 编号，差 Operit 解析 + 引用映射） |
-| G7 成员映射（群昵称） | 🔴 未做（nickname 已透传） |
+| G3 replyTo 协议头 | ✅ 已实现（`[replyTo:N]`/JSON → 编号消息原生引用） |
+| G7 成员映射（群昵称） | ✅ 已实现（known_users 别名优先 + 群名片透传）；剩 `get_group_member_info` 自动映射（可选） |
 | DirectWsTransport（本地直连） | 🔴 接口预留，未实现（当前远端） |
-| P4 附加层（语音/表情/QQ空间/撤回/@/输入态/图片） | 🔴 未做（NapCat 支持已确认，见 DESIGN §5） |
-| UI 两套 | 🔴 未做（P5） |
+| P4 附加层（语音/表情/QQ空间/撤回/输入态/图片） | 🔴 待做（见 IDEAS / STATUS §4） |
+| UI（compose_dsl 设置页） | 🟡 设置页已有；WebView 版 P5 |
 | TLS/安全组 | ⚠️ 公网明文暴露（token 鉴权在）；建议收紧 8080 源 IP + 后续 TLS |
 
 ## 3. 通道层决策
