@@ -477,11 +477,24 @@ async function handleStart(payload) {
   const cfg = getConfig();
   if (!cfg.bridgeUrl) throw new Error("未配置服务器地址（bridge_url）");
   if (!cfg.bridgeToken) throw new Error("未配置 Bridge Token");
-  // 对齐文档：fixed 模式须已绑定有效对话
+  // 对齐文档：fixed 模式须有可用绑定（宿主偶发把 config 回退成已删对话，这里做容错：群绑定/私聊绑定任一可用即放行）
   if (cfg.chatBindingMode === "fixed") {
-    if (!cfg.fixedChatId) throw new Error("fixed 模式尚未绑定对话（请先 bind_current_chat 或 configure 固定对话ID）");
-    const ok = await findChatById(cfg.fixedChatId);
-    if (!ok) throw new Error("fixed 模式绑定的对话不存在或不可用: " + cfg.fixedChatId);
+    const gb = cfg.groupChatBindings || {};
+    const hasGroupBinding = Object.keys(gb).length > 0;
+    let fixedOk = false;
+    if (cfg.fixedChatId) {
+      try { fixedOk = await findChatById(cfg.fixedChatId); } catch (e) { fixedOk = false; }
+    }
+    let ownerOk = false;
+    if (cfg.privateOwnerChatId) {
+      try { ownerOk = await findChatById(cfg.privateOwnerChatId); } catch (e) { ownerOk = false; }
+    }
+    if (!fixedOk && !hasGroupBinding && !ownerOk) {
+      throw new Error("没有可用的对话绑定：fixedChatId 失效且无 groupChatBindings/privateOwnerChatId");
+    }
+    if (!fixedOk && (hasGroupBinding || ownerOk)) {
+      console.warn("[napcat_pro] fixedChatId 失效，但群绑定/私聊绑定可用，放行启动");
+    }
   }
   // 验证服务器连通
   const health = await serverHealth();
