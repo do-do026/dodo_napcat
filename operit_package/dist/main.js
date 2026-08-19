@@ -120,10 +120,11 @@ function ensureDir() {
 let cache = null;
 function loadConfig() {
   const raw = readJson(CONFIG_PATH, {});
-  // env 覆盖
+  // 需求（2026-08-19）：env 只作为「缺失项」的兜底，不覆盖 config.json 已配置的值。
+  // T012：config.json 为唯一权威；曾因 env_preferences.xml 残留旧 fixedChatId=已删对话，把绑定错误覆盖、start 报错
   Object.keys(ENV_MAP).forEach((k) => {
     const ev = envValue(ENV_MAP[k]);
-    if (ev !== undefined) raw[k] = ev;
+    if (ev !== undefined && (raw[k] === undefined || raw[k] === null || asText(raw[k]).trim() === "")) raw[k] = ev;
   });
   cache = normalize(raw);
   return cache;
@@ -164,7 +165,23 @@ function persistState() {
 }
 function loadState() {
   const saved = readJson(STATE_PATH, {});
-  if (saved && typeof saved === "object") state = Object.assign(state, saved);
+  if (saved && typeof saved === "object") {
+    // 恢复计数器与时间戳，但不恢复 running/processing（进程重启后循环必然不在跑）
+    state.processedCount = saved.processedCount || 0;
+    state.ignoredCount = saved.ignoredCount || 0;
+    state.failedCount = saved.failedCount || 0;
+    state.lastPollAt = saved.lastPollAt || 0;
+    state.lastMessageAt = saved.lastMessageAt || 0;
+    state.lastReplyAt = saved.lastReplyAt || 0;
+    state.startedAt = saved.startedAt || 0;
+    state.lastError = saved.lastError || "";
+    state.loopGeneration = saved.loopGeneration || 0;
+    state.bindings = saved.bindings || {};
+  }
+  // 强制：running=false, processing=false（进程重启后循环必然不在跑）
+  state.running = false;
+  state.processing = false;
+  touchState();
 }
 function touchState() { stateDirty = true; }
 
@@ -393,8 +410,12 @@ async function loop(generation) {
   state.running = true;
   state.startedAt = Date.now();
   touchState();
-  while (getConfig().enabled && generation === state.loopGeneration) {
+  while (generation === state.loopGeneration) {
+    // 每轮重新读 config 文件，确保外部修改 enabled（如 UI 开关、手动编辑 config.json）能即时生效
+    loadConfig();
+    if (!getConfig().enabled) break;
     await processOne();
+    loadConfig();
     if (!getConfig().enabled || generation !== state.loopGeneration) break;
     await Tools.System.sleep(getConfig().pollIntervalMs);
   }
@@ -469,6 +490,11 @@ async function handleConfigure(payload) {
     groupChatBindings: payload.group_chat_bindings !== undefined ? normalizeGroupBindings(payload.group_chat_bindings) : prev.groupChatBindings,
     aiTimeoutMs: payload.ai_timeout_ms !== undefined ? Number(payload.ai_timeout_ms) : prev.aiTimeoutMs,
   });
+  // 如果 enabled 从 true→false，主动停止轮询循环（防止「UI关了但循环还在跑」）
+  if (prev.enabled && !next.enabled) {
+    stopLoop();
+    console.log("[napcat_pro] configure: enabled→false, loop stopped");
+  }
   return { success: true, config: publicConfig() };
 }
 
@@ -513,6 +539,11 @@ async function handleStop() {
   const stopped = stopLoop();
   const cfg = getConfig();
   if (cfg.enabled) { saveConfig({ enabled: false }); }
+  // 清服务器队列，防止积压消息在重开时涌入
+  try {
+    await httpJson("/api/queue/clear", "POST", null, 8000);
+    console.log("[napcat_pro] stop: server queue cleared");
+  } catch (e) { /* 服务器可能不在线，忽略 */ }
   return { success: true, stopped: stopped };
 }
 
