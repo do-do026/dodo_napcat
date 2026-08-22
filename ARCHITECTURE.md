@@ -32,9 +32,9 @@ QQ群/私聊 → NapCat(服务器,ws6098) → dodo_bridge_server.py(服务器,0.
          └── Operit ToolPkg(com.operit.napcat_pro)：sendMessage(AI) → /api/reply
 ```
 ### 2.2 已实现
-- 服务器：队列状态机、触发矩阵、selective 预过滤、批量/队列管理/限流、stale（每会话保留最近一条 + 领取补上下文）、分条+原生引用、**G1 群聚合桶（当前开 5000ms）**、G2 上下文双模式（count/time）、G3 replyTo 协议头、G7 成员别名映射（known_users，env 化）、@/关键词触发必回（ignore 范围由 selection_required 代码划界）、NAPCAT_BOT_NAME 艾特渲染、NAPCAT_BRIDGE_PROMPT 提示词（env+config 可改）、/health、token 鉴权
+- 服务器：队列状态机、触发矩阵、selective 预过滤、批量/队列管理/限流、stale（每会话保留最近一条 + 领取补上下文）、分条、**原生引用（仅 Gateway 刚开启回历史消息时，quote_catch_up_only）**、**G1 群聚合桶（当前开 5000ms）**、G2 上下文双模式（count/time）、G3 replyTo 协议头、G7 成员别名映射（known_users，env 化）、@/关键词触发带上下文 + ignore 正常忽略（哨兵/空→忽略，不补"我在。"）、NAPCAT_BOT_NAME 艾特渲染、NAPCAT_BRIDGE_PROMPT 提示词（env+config 可改）、/health、token 鉴权
 - 服务器守护：`dodo_bridge_watchdog.sh`（保活 + 登录守卫 + 周期重登，cron 每10分钟 + 周一04:30）
-- Operit：Transport(pull/reply/ignore/requeue/config)、配置 schema+env、fixed/auto/**按群绑定**(groupChatBindings)、轮询循环、AI 调用(withChatRetry)、ignore 代码划界兜底回复、IPC 顶层注册、每轮处理日志
+- Operit：Transport(pull/reply/ignore/requeue/config)、配置 schema+env、fixed/auto/**按群绑定**(groupChatBindings)、轮询循环、AI 调用(withChatRetry)、ignore 正常忽略（哨兵/空→忽略）、IPC 顶层注册、每轮处理日志
 - 子包：`napcat_pro_bridge`（9 工具）+ `napcat_pro_server`（守护/重登/二维码，6 工具）
 
 ### 2.3 未实现（蓝图 vs 现状差异）

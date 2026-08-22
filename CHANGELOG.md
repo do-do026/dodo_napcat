@@ -1,5 +1,11 @@
 # dodo_napcat 更新日志（CHANGELOG）
 
+## 2026-08-22（行为调整）
+### v0.9.3
+- **ignore 正常忽略**：AI 输出 `[[QQ_BRIDGE_IGNORE]]` 或空内容即正常忽略，**取消"我在。"兜底替换**（不再硬凑一句废话）；触发仍带上下文。
+- **引用回复只在 Gateway 刚开启、回历史消息时用**：新增 `quote_catch_up_only`（env `NAPCAT_QUOTE_CATCH_UP_ONLY`，默认 true）；服务器启动记录 `server_started_at`，只有 `created_at < server_started_at`（刚启动时队列里的历史消息）才加原生引用段，其他时候不再引用。设为 false 可恢复"每条都引用"。
+- 顺带修复：`loadConfig` env 只作缺失项兜底、不覆盖 config.json（08-19，避免 env_preferences 残留把绑定覆盖成已删对话）。
+
 ## 2026-08-16（工程首日，密集推进）
 ### v0.1 需求与决策（18:25~19:36）
 - 明确方向：灌 qqbot-pro 能力进 NapCat 包 + 两 NapCat 包择优合并 + 不修老屎写干净新包
@@ -72,3 +78,15 @@
 ### 事故/教训
 - 测试会话 flash 绑到活跃大群并回复，初尘在群里受罪 → **铁律：测试前先问初尘（对话/群/开关）**
 - 服务器 LISTEN_HOST 被改成 0.0.0.0（必要但未先问）→ 公网暴露注意安全组/TLS
+
+## 2026-08-18（BUG-06 修复：关了但没真关）
+
+### v0.9.3 修复 enabled=false 不生效（10:0x~10:1x）
+- **现象**：用户在 Operit 插件管理关了桥接（config.json enabled=false），但 QQ 私聊仍在自动回复。state.json running=true 残留，failedCount=85（连不上服务器但循环没退出）
+- **根因**（4 处）：
+  1. `loop()` 只读内存缓存 `getConfig().enabled`，外部修改 config.json 不生效 → 改为每轮迭代前 `loadConfig()` 重读文件
+  2. `loadState()` 用 `Object.assign` 盲目恢复 `running=true`，进程重启后循环实际不在跑但状态显示在跑 → 改为只恢复计数器/时间戳/binding，强制 `running=false, processing=false`
+  3. `handleConfigure()` 设 enabled=false 时不停循环 → 检测到 `prev.enabled && !next.enabled` 主动 `stopLoop()`
+  4. `handleStop()` 不清服务器队列 → 新增 `POST /api/queue/clear`，防止积压消息在重开时涌入
+- **修复同步到 3 处**：`dodo_napcat/operit_package/dist/main.js`（工程源）+ `dev_package/com.operit.napcat_pro/dist/main.js`（开发目录）+ `plugins/com.operit.napcat_pro/state.json`（手动修正 running=false）
+- **待做**：重新烧录 toolpkg + 重启 Operit 生效；验证开/关行为

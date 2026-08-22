@@ -12,7 +12,7 @@
 | 批量领取（BUG-02） | ✅ | ✅ | — | /api/pull?count=N |
 | 队列管理（BUG-03） | ✅ | ✅ | — | /api/queue/clear+stats |
 | 会话限流+队列上限（BUG-04） | ✅ | ✅ | — | |
-| P2 Operit 消费端（com.operit.napcat_pro） | ✅ | ✅烧录 | ✅ | 真机验证通过（@必回/ignore代码划界/按群绑定/每轮日志） |
+| P2 Operit 消费端（com.operit.napcat_pro） | ✅ | ✅烧录 | ✅ | 真机验证通过（触发带上下文/ignore正常/按群绑定/引用catch_up） |
 | 对话绑定 fixed/auto/按群 | ✅ | ✅ | ✅ | groupChatBindings {群ID:chatId} > fixedChatId；主人私聊走 privateOwnerChatId |
 | 选择性忽略哨兵 | ✅ | — | — | [[QQ_BRIDGE_IGNORE]] |
 | **G1 群聚合桶**（P3） | ✅ | ✅ | ✅ | 当前开（group_aggregate_window_ms=5000，触发聚合） |
@@ -24,11 +24,12 @@
 | 语音 / 表情包 / QQ空间 / 撤回 / @ / 输入态 / 图片 | 🔴 | — | — | P4 |
 | UI 两套（compose_dsl+WebView） | 🔴 | — | — | P5 |
 
-## 2. 当前运行状态（2026-08-17 19:00）
+## 2. 当前运行状态（2026-08-18 10:15）
 - 服务器桥：running（ws_connected=true），0.0.0.0:8080
-- 自动回复：**开**（Operit config enabled=true）
+- 自动回复：**关**（Operit config enabled=false）—— 用户昨晚手动关闭
+- **修复 BUG-06**：enabled=false 不生效（loop 不重读 config + loadState 盲目恢复 running=true）→ 4 处修复（loop 每轮 loadConfig、loadState 强制 running=false、handleConfigure 检测 enabled→false 主动 stopLoop、handleStop 清队列）
 - 群模式：keyword_or_at（回艾特+关键词，关键词可在 UI 调）｜ 上下文：count 模式 ｜ 聚合：开（group_aggregate_window_ms=5000）
-- **ignore 范围代码划界**：selection_required 只在批量观察(scope=all)非触发候选为 True；@/关键词/主人触发必回（Operit 拦下哨兵兜底回复）
+- **ignore 正常忽略**：AI 输出忽略哨兵或空内容即正常忽略（不再补"我在。"）；**原生引用只在 Gateway 刚开启、回历史消息时用**（`NAPCAT_QUOTE_CATCH_UP_ONLY`）
 - 绑定：fixedChatId=b547763e「渡渡&初尘」；groupChatBindings{<群ID>: b547763e}；主人私聊 f128b2c7；角色卡渡渡
 - 服务器守护：dodo_bridge_watchdog.sh（cron 每10分钟保活 + 每周一04:30周期重登）
 - 队列：空（正常）
@@ -37,7 +38,7 @@
 13 默认不自动开 ✅ ｜ 14 群默认 keyword_or_at（回艾特+关键词，UI可调）✅ ｜ 15 丢 N 分钟前内容 ✅ ｜ 16 at_only 读艾特前后 N 秒（time 模式 ✅）｜ 17 上下文双模式 time/count ✅（G2）
 
 ## 4. 下一步
-1. ✅ 受控测试已完成（真机：@必回 / ignore代码划界 / 按群绑定 / @渲染成名字）
+1. ✅ 受控测试已完成（真机：触发带上下文 / ignore 正常 / 按群绑定 / @渲染成名字 / 引用catch_up）
 2. ✅ 已推 GitHub（do-do026/dodo_napcat，v0.9.1 / v0.9.2 Release + 离线包）
 3. ✅ G3 replyTo / G7 成员映射 / 服务器守护 / env化配置 已实现
 4. **P4**：语音（record段）/ 表情包 / QQ空间 / 撤回 / 输入态 / 图片

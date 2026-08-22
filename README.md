@@ -5,12 +5,12 @@
 
 ## 功能
 - 收群聊/私聊消息，@/关键词触发回复（群默认 `keyword_or_at`，关键词可在 UI 调）
-- **触发必回**：@/关键词/主人触发带上下文+必回，AI 无权忽略（ignore 范围由代码划界，非靠 prompt 嘴炮）
-- 原生引用回复（reply 段）、按句号分条（waifu chunker）、聚合窗口合并、复读检测
+- **触发带上下文 + 必回**：@/关键词/主人触发带上下文；AI 输出忽略哨兵或空内容则**正常忽略**（不再补"我在。"）
+- 按句号分条（waifu chunker）、聚合窗口合并、复读检测；**原生引用（reply 段）只在 Gateway 刚开启、回历史消息时用**（`NAPCAT_QUOTE_CATCH_UP_ONLY`）
 - 选择性观察轮（scope=all）：AI 在非触发候选上可自行选择回复/忽略
 - 对话绑定：按群绑定（groupChatBindings）> 固定对话（fixedChatId）> 自动开对话；主人私聊独立对话
 - stale 清理：每会话保留最近一条未处理，领取时补拉最近上下文
-- env 化配置：`NAPCAT_BOT_NAME`（艾特渲染成 @名字）、`NAPCAT_KNOWN_USERS`（昵称映射）、`NAPCAT_BRIDGE_PROMPT`（提示词，UI/agent 可改，默认兜底）、回复规则全套
+- env 化配置：`NAPCAT_BOT_NAME`（艾特渲染成 @名字）、`NAPCAT_KNOWN_USERS`（昵称映射）、`NAPCAT_BRIDGE_PROMPT`（提示词，UI/agent 可改，默认兜底）、`NAPCAT_QUOTE_CATCH_UP_ONLY`（引用只在刚开启回历史消息时）、回复规则全套
 - 服务器守护：watchdog 保活 + 登录守卫 + 周期重登；子包 `napcat_pro_server`（守护/重登/二维码拉取）
 - Operit 每轮处理日志 `[napcat_pro] round ... -> IGNORED/REPLY`（可观测）
 - **待做（未在本版本）**：语音 / 表情包 / QQ空间 / 撤回 / 图片 → 见 `STATUS.md` §4 / `IDEAS.md`

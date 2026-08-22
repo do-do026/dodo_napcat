@@ -91,9 +91,24 @@
   3. 每条触发都带 10 行群聊上下文，AI 见整墙别人聊天更倾向判断"不关我事"而忽略。
 - 修复（v0.9，04:55 定稿）：
   1. `owner_always_reply` 只保证**私聊**必回；群聊跟群模式走（仅艾特/关键词触发）；
-  2. 群**触发**（@/关键词）**带上下文 + 必回**（`NAPCAT_GROUP_IMMEDIATE_CONTEXT=0`=标准10条，`<0`才关上下文）；
-  3. **ignore 范围由代码划界**：`selection_required` 只在「批量观察(scope=all)里的非触发候选」为 True；@/关键词/主人触发无论 scope 都必回（Operit 侧 `ignorePermitted = selection_required && !forced` 据此拦下哨兵，AI 就算输出 `[[QQ_BRIDGE_IGNORE]]` 也被兜底回复）；**prompt 恢复简洁**，不再"禁止这个禁止那个"；
+  2. 群**触发**（@/关键词）**带上下文**（`NAPCAT_GROUP_IMMEDIATE_CONTEXT=0`=标准10条，`<0`才关上下文）；
+  3. **ignore 正常忽略**：AI 输出哨兵/空内容即忽略（**不再补"我在。"**）——触发也尊重 AI 决定，不硬凑回复；prompt 保持简洁；
   4. stale 保留的最近一条领取时仍补拉 10 条上下文（恢复场景需要语境）。
+  5. **引用回复只在 Gateway 刚开启、回历史消息时用**（`quote_catch_up_only`，2026-08-22）；平时不再引用。
 - 主人映射：`owner_qq=<主人QQ号>` + `known_users={"<主人QQ号>":"苜蓿"}`（已补写进服务器 env：NAPCAT_OWNER_QQ/NAPCAT_OWNER_ALWAYS_REPLY/NAPCAT_KNOWN_USERS）。
 - 按群绑定：新增 `groupChatBindings {群ID: chatId}`（>fixedChatId）；群 <群ID> → b547763e「渡渡&初尘」（旧 2f928270 已删，fixedChatId 已更新；主人私聊走 f128b2c7）。
 - 验证：服务器已部署生效（health: imm_ctx=0、scope=trigger、mode=keyword_or_at）；新 QQ 艾特/关键词消息应直接回复到 b547763e。
+
+## T017 关了但没真关（enabled=false 不生效，2026-08-18 修复）
+- 现象：用户在 Operit 插件管理关了桥接（config.json enabled=false），但 QQ 私聊仍在自动回复。state.json running=true 残留，failedCount=85。
+- 根因（4 处叠加）：
+  1. `loop()` 的 while 条件用 `getConfig().enabled` 只读内存缓存，外部改 config.json 不生效 → 循环不知道 enabled 变了
+  2. `loadState()` 用 `Object.assign(state, saved)` 盲目恢复 `running=true`，进程重启后循环实际不在跑但状态显示在跑
+  3. `handleConfigure()` 设 enabled=false 时没调 `stopLoop()` → UI/工具关闭只改文件不停循环
+  4. `handleStop()` 不清服务器队列 → 关闭后积压消息在重开时涌入
+- 修复（v0.9.3）：
+  1. loop 每轮迭代前 `loadConfig()` 重读文件，外部改 enabled 在 3 秒内生效
+  2. loadState 只恢复计数器/时间戳/binding，强制 `running=false, processing=false`
+  3. handleConfigure 检测 `prev.enabled && !next.enabled` 主动 `stopLoop()`
+  4. handleStop 新增 `POST /api/queue/clear` 清队列
+- 教训：**轮询循环的退出条件不能只依赖内存缓存**，必须每轮重读持久化配置；**进程重启后 running 状态不可信**，必须强制重置。
