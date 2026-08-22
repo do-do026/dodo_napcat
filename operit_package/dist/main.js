@@ -604,6 +604,7 @@ async function handleSetReplyRules(payload) {
   if (payload.split_reply_enabled !== undefined) patch.split_reply_enabled = !!payload.split_reply_enabled;
   if (payload.reply_part_delay_ms !== undefined) patch.reply_part_delay_ms = Number(payload.reply_part_delay_ms);
   if (payload.quote_reply_enabled !== undefined) patch.quote_reply_enabled = !!payload.quote_reply_enabled;
+  if (payload.quote_catch_up_only !== undefined) patch.quote_catch_up_only = !!payload.quote_catch_up_only;
   if (payload.bot_name !== undefined) patch.bot_name = asText(payload.bot_name).trim();
   if (payload.bridge_prompt !== undefined) patch.bridge_prompt = asText(payload.bridge_prompt).trim();
   const result = await serverConfig(patch);
