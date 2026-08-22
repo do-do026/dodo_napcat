@@ -209,6 +209,29 @@ async function serverStats() { return await httpJson("/api/queue/stats", "GET", 
 async function serverConfig(patch) { return await httpJson("/api/config", "POST", patch || {}, 15000); }
 async function serverGetConfig() { return await httpJson("/api/config", "GET", null, 8000); }
 
+// ==================== 识图直传（需求 2026-08-22） ====================
+// item.images = [{url,file},...]（服务器收集的消息图片）。抓图到本地 → registerImageFromPath 得到
+// <link type="image" id="..."> → 注入 prompt，让视觉模型（deepseek-v4-flash-vision）看图。
+async function attachImagesToPrompt(prompt, images) {
+  let extra = "";
+  const list = Array.isArray(images) ? images : [];
+  for (const im of list) {
+    const url = asText(im && im.url ? im.url : "").trim();
+    if (!url) continue;
+    try {
+      const dest = "/sdcard/Download/operit_img_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8) + ".jpg";
+      await Tools.Files.download(url, dest, "android");
+      if (typeof core !== "undefined" && typeof core.registerImageFromPath === "function") {
+        const tag = core.registerImageFromPath(dest);
+        if (tag) extra += "\n" + tag;
+      }
+    } catch (e) {
+      console.warn("[napcat_pro] vision attach fail " + url + ": " + (e && e.message ? e.message : e));
+    }
+  }
+  return extra ? prompt + "\n" + extra : prompt;
+}
+
 // ==================== 角色卡解析 ====================
 async function resolveCardId() {
   const cfg = getConfig();
@@ -352,10 +375,12 @@ async function processOne() {
       }
       // 用 Tools.Chat.sendMessage + senderName（extended_chat/chat_with_agent 验证可用的路径）；
       // sendMessageStreaming 也会触发 ensureServiceConnected，间歇性 Service not connected → withChatRetry 兜底
+      // 需求（2026-08-22）：识图直传——把 item.images（消息图片）注册进模型 chat 再发，让视觉模型看图
+      const finalPrompt = await attachImagesToPrompt(prompt, item.images);
       let aiResult;
       try {
         aiResult = await withChatRetry(() => Tools.Chat.sendMessage(
-          prompt, chatId, cardId || undefined, "渡渡",
+          finalPrompt, chatId, cardId || undefined, "渡渡",
           {
             persist_turn: true, notify_reply: false, hide_user_message: true, disable_warning: true,
             timeout_ms: cfg.aiTimeoutMs
