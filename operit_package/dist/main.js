@@ -367,13 +367,10 @@ async function processOne() {
         throw error;
       }
       const cleaned = stripModelMarkup(aiResult?.aiResponse || aiResult?.data?.aiResponse || aiResult?.content || aiResult?.message || "");
-      // 需求（2026-08-17）：ignore 使用范围由代码划界，不靠 prompt 嘴炮——
-      // 触发（群@/关键词/主人、私聊主人）必回，AI 无权忽略；只有选择性候选（selection_required 且非触发）才允许忽略
-      const forced = (item.message_type === "group" && (item.trigger === "at" || item.trigger === "keyword" || item.trigger === "owner")) ||
-                     (item.message_type === "private" && item.trigger === "owner");
-      const ignorePermitted = !!item.selection_required && !forced;
-      const isIgnored = cleaned === IGNORE_SENTINEL && ignorePermitted;
-      console.log("[napcat_pro] round " + (item.message_type || "") + " u" + (item.user_id || "") + " g" + (item.group_id || "") + " chat=" + chatId + " trig=" + (item.trigger || "") + " igPerm=" + ignorePermitted + " -> " + (isIgnored ? "IGNORED" : "REPLY"));
+      // 需求（2026-08-22）：ignore 就正常 ignore，不再替换成"我在。"——
+      // AI 输出忽略哨兵或空内容即走忽略（记录但不发送），不硬凑一句"我在。"
+      const isIgnored = !cleaned || cleaned === IGNORE_SENTINEL;
+      console.log("[napcat_pro] round " + (item.message_type || "") + " u" + (item.user_id || "") + " g" + (item.group_id || "") + " chat=" + chatId + " trig=" + (item.trigger || "") + " -> " + (isIgnored ? "IGNORED" : "REPLY"));
       if (isIgnored) {
         await ignoreMsg(itemId, "ai_selective_ignore");
         state.ignoredCount += 1;
@@ -381,8 +378,7 @@ async function processOne() {
         results.push({ id: itemId, ignored: true });
         continue;
       }
-      // 触发必回：AI 就算输出哨兵也被代码拦下，兜底回复，不漏回
-      const replyText = (cleaned && cleaned !== IGNORE_SENTINEL) ? cleaned : "我在。";
+      const replyText = cleaned;
       await reply(itemId, replyText);
       state.processedCount += 1;
       state.lastReplyAt = Date.now();
