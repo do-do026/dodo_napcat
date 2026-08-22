@@ -107,6 +107,8 @@ DEFAULT_REPLY_CONFIG = {
     "quote_reply_enabled": _env_bool("NAPCAT_QUOTE_REPLY_ENABLED", True),   # 回复时原生引用原消息（reply 段）
     # 需求（2026-08-22）：引用回复只在 Gateway 刚开启、回复最新一条历史消息时用（catch_up），其他时候不引用
     "quote_catch_up_only": _env_bool("NAPCAT_QUOTE_CATCH_UP_ONLY", True),
+    # 需求（2026-08-22）：识图直传原生视觉模型——把消息里的图片注册进模型 chat（<link type="image">），否则只显示[图片]占位
+    "image_vision": _env_bool("NAPCAT_IMAGE_VISION", True),
     # P3（2026-08-16）：G1 群聚合 + G2 上下文双模式（需求16/17，默认不改变现有行为）
     "group_aggregate_window_ms": _env_int("NAPCAT_GROUP_AGGREGATE_WINDOW_MS", 0),  # 0=不聚合（默认，保持现行为）；>0=群触发消息按窗口合成一轮
     "at_context_mode": os.environ.get("NAPCAT_AT_CONTEXT_MODE", "count"),      # count=取最后N条（默认）/ time=只读艾特前后N秒（需求17）
@@ -237,6 +239,7 @@ def normalize_config(value):
         "reply_part_delay_ms": max(0, min(5000, int(raw.get("reply_part_delay_ms", 450) or 0))),
         "quote_reply_enabled": raw.get("quote_reply_enabled", True) is not False,
         "quote_catch_up_only": raw.get("quote_catch_up_only", True) is not False,
+        "image_vision": raw.get("image_vision", True) is not False,
         # P3：G1 聚合 + G2 上下文双模式
         "group_aggregate_window_ms": max(0, min(60000, int(raw.get("group_aggregate_window_ms", 0) or 0))),
         "at_context_mode": "time" if str(raw.get("at_context_mode", "count")).lower() == "time" else "count",
@@ -417,6 +420,7 @@ def _flush_group_bucket(key):
             "text": agg_text,
             "messages": [agg_text],
             "message_count": len(events),
+            "images": _collect_events_images(events),
             "is_owner": owner,
             "trigger": trigger,
             "selection_required": selection_required,
@@ -519,6 +523,33 @@ def message_text(data):
     if BOT_QQ:
         raw = re.sub(rf"\[CQ:at,qq={BOT_QQ}(?:,[^\]]*)?\]\s*", "", raw).strip()
     return raw or ("在吗" if is_at_bot(data) else "[非文本消息]")
+
+
+def message_images(data):
+    """收集消息里的图片段，返回 [{url,file}, ...]，供识图（直传原生视觉模型）用。"""
+    msg = data.get("message")
+    imgs = []
+    if isinstance(msg, list):
+        for seg in msg:
+            if isinstance(seg, dict) and seg.get("type") == "image":
+                d = seg.get("data") or {}
+                u = str(d.get("url") or "")
+                f = str(d.get("file") or "")
+                if u or f:
+                    imgs.append({"url": u, "file": f})
+    return imgs
+
+
+def _collect_events_images(events):
+    """聚合桶：把 events 里各条消息的图片去重合并（按 url/file）。"""
+    out, seen = [], set()
+    for ev in events:
+        for im in (ev.get("images") or []):
+            key = im.get("url") or im.get("file") or ""
+            if key and key not in seen:
+                seen.add(key)
+                out.append(im)
+    return out
 
 
 def keyword_hit(text):
@@ -630,6 +661,7 @@ def enqueue_message(data):
     if not user_id or user_id == BOT_QQ or msg_type not in ("private", "group"):
         return
     text = message_text(data)
+    imgs = message_images(data) if reply_config["image_vision"] else []
     qq_message_id = str(data.get("message_id", ""))
     sender = data.get("sender") or {}
     nickname = sender.get("card") or sender.get("nickname") or str(user_id)
@@ -690,6 +722,7 @@ def enqueue_message(data):
                 "text": text,
                 "at_bot": at_bot,
                 "trigger": trigger,
+                "images": imgs,
                 "selection_required": True,
                 "ts": now,
             }, now)
@@ -707,6 +740,10 @@ def enqueue_message(data):
             merge_item["message_count"] = len(merge_item["messages"])
             merge_item["last_message_at"] = now
             merge_item["ready_at"] = now + reply_config["debounce_seconds"]
+            if imgs:
+                merge_item.setdefault("images", [])
+                for im in imgs:
+                    merge_item["images"].append(im)
             save_queue()
             log(f"debounce merged {msg_type} {user_id}, count={merge_item['message_count']}")
             return
@@ -744,6 +781,7 @@ def enqueue_message(data):
             "messages": [text],
             "message_count": 1,
             "is_owner": owner,
+            "images": imgs,
             "trigger": trigger,
             "selection_required": selection_required,
             "context": recent_context,
@@ -1173,6 +1211,7 @@ class Handler(BaseHTTPRequestHandler):
                     "split_reply_enabled": reply_config["split_reply_enabled"],
                     "quote_reply_enabled": reply_config["quote_reply_enabled"],
                     "quote_catch_up_only": reply_config["quote_catch_up_only"],
+                    "image_vision": reply_config["image_vision"],
                     "group_aggregate_window_ms": reply_config["group_aggregate_window_ms"],
                     "at_context_mode": reply_config["at_context_mode"],
                     "at_context_before_sec": reply_config["at_context_before_sec"],
@@ -1215,6 +1254,7 @@ class Handler(BaseHTTPRequestHandler):
                     "selection_required": x.get("selection_required") is True,
                     "is_owner": x.get("is_owner") is True,
                     "trigger": str(x.get("trigger") or ""),
+                    "images": x.get("images") or [],
                     "prompt": format_prompt(x),
                 } for x in items],
             })
