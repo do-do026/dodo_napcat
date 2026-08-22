@@ -84,6 +84,7 @@ DEFAULT_BRIDGE_PROMPT = os.environ.get(
 
 
 KEEP_NEWEST_STALE = _env_bool("NAPCAT_KEEP_NEWEST_STALE", True)   # 需求（2026-08-17）：每会话保留最近一条未处理，避免断连后最新回复消息也被丢光
+server_started_at = 0                                             # 需求（2026-08-22）：Gateway（服务器）启动时刻，用于"刚开启回历史消息才引用"
 
 
 GROUP_MODES = {"off", "at_only", "keyword_or_at", "selective", "all"}
@@ -104,6 +105,8 @@ DEFAULT_REPLY_CONFIG = {
     "split_reply_enabled": _env_bool("NAPCAT_SPLIT_REPLY_ENABLED", True),
     "reply_part_delay_ms": _env_int("NAPCAT_REPLY_PART_DELAY_MS", 450),
     "quote_reply_enabled": _env_bool("NAPCAT_QUOTE_REPLY_ENABLED", True),   # 回复时原生引用原消息（reply 段）
+    # 需求（2026-08-22）：引用回复只在 Gateway 刚开启、回复最新一条历史消息时用（catch_up），其他时候不引用
+    "quote_catch_up_only": _env_bool("NAPCAT_QUOTE_CATCH_UP_ONLY", True),
     # P3（2026-08-16）：G1 群聚合 + G2 上下文双模式（需求16/17，默认不改变现有行为）
     "group_aggregate_window_ms": _env_int("NAPCAT_GROUP_AGGREGATE_WINDOW_MS", 0),  # 0=不聚合（默认，保持现行为）；>0=群触发消息按窗口合成一轮
     "at_context_mode": os.environ.get("NAPCAT_AT_CONTEXT_MODE", "count"),      # count=取最后N条（默认）/ time=只读艾特前后N秒（需求17）
@@ -233,6 +236,7 @@ def normalize_config(value):
         "split_reply_enabled": raw.get("split_reply_enabled", True) is not False,
         "reply_part_delay_ms": max(0, min(5000, int(raw.get("reply_part_delay_ms", 450) or 0))),
         "quote_reply_enabled": raw.get("quote_reply_enabled", True) is not False,
+        "quote_catch_up_only": raw.get("quote_catch_up_only", True) is not False,
         # P3：G1 聚合 + G2 上下文双模式
         "group_aggregate_window_ms": max(0, min(60000, int(raw.get("group_aggregate_window_ms", 0) or 0))),
         "at_context_mode": "time" if str(raw.get("at_context_mode", "count")).lower() == "time" else "count",
@@ -874,6 +878,8 @@ def claim_next(count=1):
                 key = item.get("conversation_key") or ""
                 item["context"] = snapshot_context(key, now, str(item.get("trigger") or ""), limit_hint=10)
                 item.pop("stale_kept", None)
+            # 需求（2026-08-22）：标记「Gateway 刚开启回的历史消息」——created_at 早于服务器启动时刻，用于"仅此时引用"
+            item["catch_up"] = int(item.get("created_at") or 0) < server_started_at
             claimed.append(item)
         if claimed or changed:
             save_queue()
@@ -1069,7 +1075,12 @@ def build_outgoing_message(item, text, index, total, target_qid=None):
     qid = target_qid or item.get("qq_message_id")
     # 需求19：复读轮（suppress_quote）且 AI 未显式指定 [replyTo:N] → 不自动引用，只主动回复一次
     suppress = bool(item.get("suppress_quote")) and not target_qid
-    if reply_config["quote_reply_enabled"] and index == 0 and qid and not suppress:
+    # 需求（2026-08-22）：引用回复只在 Gateway 刚开启、回复最新一条历史消息时（catch_up = created_at 早于服务器启动时刻）用；
+    # 其他时候不再引用（quote_catch_up_only 默认 True；设为 False 恢复"每条都引用"旧行为）
+    catch_up_only = reply_config.get("quote_catch_up_only", True)
+    is_catch_up = bool(item.get("catch_up"))
+    if (reply_config["quote_reply_enabled"] and index == 0 and qid and not suppress
+            and ((not catch_up_only) or is_catch_up)):
         segs.append({"type": "reply", "data": {"id": str(qid)}})
     segs.append({"type": "text", "data": {"text": text}})
     return segs
@@ -1161,6 +1172,7 @@ class Handler(BaseHTTPRequestHandler):
                     "debounce_seconds": reply_config["debounce_seconds"],
                     "split_reply_enabled": reply_config["split_reply_enabled"],
                     "quote_reply_enabled": reply_config["quote_reply_enabled"],
+                    "quote_catch_up_only": reply_config["quote_catch_up_only"],
                     "group_aggregate_window_ms": reply_config["group_aggregate_window_ms"],
                     "at_context_mode": reply_config["at_context_mode"],
                     "at_context_before_sec": reply_config["at_context_before_sec"],
@@ -1314,10 +1326,12 @@ class Handler(BaseHTTPRequestHandler):
 
 # ==================== 入口 ====================
 def main():
+    global server_started_at
     if not BRIDGE_TOKEN:
         raise RuntimeError("BRIDGE_TOKEN is required")
     if not BOT_QQ:
         raise RuntimeError("BOT_QQ is required")
+    server_started_at = int(time.time())  # 需求（2026-08-22）：记录 Gateway 启动时刻，判定"刚开启回历史消息才引用"
     os.makedirs(DATA_DIR, exist_ok=True)
     load_state()
     clean_stale_queue()  # 需求：开启时丢弃 5 分钟前的内容
